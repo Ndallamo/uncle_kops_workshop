@@ -1,0 +1,49 @@
+{% extends "workshop/base.html" %}
+{% block title %}Parts Inventory{% endblock %}
+{% block page_title %}Parts Inventory{% endblock %}
+{% block topbar_actions %}
+  <a href="{% url 'part_create' %}" class="btn btn-primary btn-sm">+ Add Part</a>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <form method="get" class="flex gap-2">
+    <input name="q" value="{{ q }}" placeholder="Search part name or number…" style="max-width:280px;">
+    <button type="submit" class="btn btn-secondary">Search</button>
+    <a href="?low_stock=1" class="btn btn-secondary">⚠ Low Stock Only</a>
+    {% if q %}<a href="{% url 'parts_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Part #</th><th>Stock</th><th>Reorder At</th><th>Cost (R)</th><th>Sell (R)</th><th>Supplier</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for p in parts %}
+        <tr>
+          <td class="fw-600">{{ p.name }}</td>
+          <td class="text-muted">{{ p.part_number|default:"—" }}</td>
+          <td>
+            {% if p.low_stock %}
+              <span class="badge badge-red">{{ p.stock_qty }} ⚠</span>
+            {% else %}
+              <span class="badge badge-green">{{ p.stock_qty }}</span>
+            {% endif %}
+          </td>
+          <td>{{ p.reorder_level }}</td>
+          <td>R {{ p.cost_price }}</td>
+          <td>R {{ p.sell_price }}</td>
+          <td class="text-muted">{{ p.supplier|default:"—" }}</td>
+          <td><a href="{% url 'part_edit' p.pk %}" class="btn btn-secondary btn-sm">Edit</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted">No parts found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

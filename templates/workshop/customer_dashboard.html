@@ -1,0 +1,97 @@
+{% extends "workshop/base.html" %}
+{% block title %}Customer Dashboard – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Customer Dashboard{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="card-title">Welcome back, {{ user.first_name|default:user.username }}</div>
+      <div class="text-muted">Track your repair progress, approve cost estimates, and submit new service requests.</div>
+    </div>
+    <a href="{% url 'appointment_create' %}" class="btn btn-primary">Submit service request</a>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
+  <div class="card">
+    <div class="card-title">Track repair status</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>RO#</th><th>Vehicle</th><th>Status</th><th>Last update</th></tr>
+        </thead>
+        <tbody>
+          {% for order in repair_orders|slice:":5" %}
+          <tr>
+            <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+            <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+            <td>{{ order.get_status_display }}</td>
+            <td>{{ order.date_updated|date:"d M Y" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No repair orders found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Receive notifications</div>
+    <div style="margin-top:16px;">
+      {% if notifications %}
+        <ul style="list-style:none; padding:0; margin:0;">
+          {% for note in notifications %}
+          <li class="alert alert-info" style="margin-bottom:12px;">{{ note }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="text-muted">No new notifications right now. You will get alerts when there are updates on your repair orders or approvals.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+  <div class="card">
+    <div class="card-title">Approve job card and cost</div>
+    <div class="table-wrap" style="margin-top:16px;">
+      <table>
+        <thead>
+          <tr><th>RO#</th><th>Vehicle</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for order in pending_approval|slice:":5" %}
+          <tr>
+            <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+            <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+            <td>{{ order.get_status_display }}</td>
+            <td><a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-secondary btn-sm">Review</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No pending approvals at the moment.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Customer details</div>
+    <div style="margin-top:16px; line-height:1.6;">
+      {% if customer %}
+        <div><strong>Name:</strong> {{ customer.full_name }}</div>
+        <div><strong>Email:</strong> {{ customer.email }}</div>
+        <div><strong>Phone:</strong> {{ customer.phone|default:'—' }}</div>
+        <div><strong>Address:</strong> {{ customer.address|default:'—' }}</div>
+        <div><strong>Joined:</strong> {{ customer.created_at|date:"d M Y" }}</div>
+      {% else %}
+        <div><strong>Name:</strong> {{ user.first_name }} {{ user.last_name }}</div>
+        <div><strong>Email:</strong> {{ user.email }}</div>
+        <div class="text-muted" style="margin-top:12px;">We could not find a matching customer record for your account. Please contact support if this seems wrong.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

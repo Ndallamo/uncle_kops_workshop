@@ -1,0 +1,148 @@
+{% extends "workshop/base.html" %}
+{% block title %}RO #{{ order.pk }}{% endblock %}
+{% block page_title %}Repair Order #{{ order.pk }}{% endblock %}
+{% block topbar_actions %}
+  <a href="{% url 'repair_order_edit' order.pk %}" class="btn btn-secondary btn-sm">Edit RO</a>
+  <a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">← All ROs</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
+
+  <!-- Left: RO info -->
+  <div>
+    <div class="card mb-4">
+      <div class="card-title">Repair Details</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Customer</div>
+          <a href="{% url 'customer_detail' order.vehicle.customer.pk %}" class="text-orange fw-600">{{ order.vehicle.customer.full_name }}</a>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Vehicle</div>
+          <a href="{% url 'vehicle_detail' order.vehicle.pk %}" class="text-orange fw-600">{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</a>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Status</div>
+          <span class="badge badge-blue">{{ order.get_status_display }}</span>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Technician</div>
+          {{ order.assigned_tech.get_full_name|default:order.assigned_tech.username|default:"Unassigned" }}
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Mileage In</div>
+          {{ order.mileage_in|floatformat:"0" }} km
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Approved</div>
+          {% if order.approved %}<span class="text-green">✔ Yes</span>{% else %}<span class="badge badge-red">Pending</span>{% endif %}
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Description / Complaint</div>
+        <p style="font-size:14px; line-height:1.6;">{{ order.description }}</p>
+      </div>
+
+      {% if order.internal_notes %}
+      <div style="margin-top:16px; padding:12px; background:rgba(245,158,11,.05); border-radius:8px; border-left:3px solid var(--yellow);">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Internal Notes</div>
+        <p style="font-size:14px; line-height:1.6;">{{ order.internal_notes }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Labor Lines -->
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-4">
+        <div class="card-title">Labor</div>
+        <a href="{% url 'add_labor_line' order.pk %}" class="btn btn-primary btn-sm">+ Add Labor</a>
+      </div>
+      <table>
+        <thead><tr><th>Service</th><th>Hours</th><th>Rate (R)</th><th>Total (R)</th></tr></thead>
+        <tbody>
+          {% for line in labor_lines %}
+          <tr>
+            <td>{{ line.service_item.name }}</td>
+            <td>{{ line.hours }}</td>
+            <td>{{ line.rate }}</td>
+            <td class="fw-600">R {{ line.line_total }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No labor lines added.</td></tr>
+          {% endfor %}
+          {% if labor_lines %}
+          <tr style="background:rgba(255,255,255,.03);">
+            <td colspan="3" class="fw-600" style="text-align:right;">Labor Total</td>
+            <td class="fw-600 text-orange">R {{ order.total_labor }}</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Parts Lines -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-4">
+        <div class="card-title">Parts</div>
+        <a href="{% url 'add_parts_line' order.pk %}" class="btn btn-primary btn-sm">+ Add Part</a>
+      </div>
+      <table>
+        <thead><tr><th>Part</th><th>Qty</th><th>Unit Price (R)</th><th>Total (R)</th></tr></thead>
+        <tbody>
+          {% for line in parts_lines %}
+          <tr>
+            <td>{{ line.part.name }}</td>
+            <td>{{ line.quantity }}</td>
+            <td>{{ line.unit_price }}</td>
+            <td class="fw-600">R {{ line.line_total }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No parts added.</td></tr>
+          {% endfor %}
+          {% if parts_lines %}
+          <tr style="background:rgba(255,255,255,.03);">
+            <td colspan="3" class="fw-600" style="text-align:right;">Parts Total</td>
+            <td class="fw-600 text-orange">R {{ order.total_parts }}</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Right: Summary -->
+  <div>
+    <div class="card" style="position:sticky; top:80px;">
+      <div class="card-title">Order Summary</div>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div class="flex justify-between">
+          <span class="text-muted">Labor</span>
+          <span class="fw-600">R {{ order.total_labor }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-muted">Parts</span>
+          <span class="fw-600">R {{ order.total_parts }}</span>
+        </div>
+        <div style="height:1px; background:var(--border);"></div>
+        <div class="flex justify-between">
+          <span class="fw-600" style="font-size:16px;">Grand Total</span>
+          <span class="fw-600 text-orange" style="font-size:18px;">R {{ order.grand_total }}</span>
+        </div>
+      </div>
+
+      <div style="margin-top:20px;">
+        <a href="{% url 'invoice_create' %}?ro={{ order.pk }}" class="btn btn-primary" style="width:100%; justify-content:center;">
+          💰 Create Invoice
+        </a>
+      </div>
+
+      <div style="margin-top:12px; font-size:12px; color:var(--muted);">
+        Created: {{ order.date_created|date:"d M Y H:i" }}<br>
+        Updated: {{ order.date_updated|date:"d M Y H:i" }}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "workshop/base.html" %}
+{% block title %}{{ customer.full_name }} – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}{{ customer.full_name }}{% endblock %}
+{% block topbar_actions %}
+  <a href="{% url 'customer_edit' customer.pk %}" class="btn btn-secondary btn-sm">Edit Customer</a>
+  <a href="{% url 'customer_list' %}" class="btn btn-secondary btn-sm">← All Customers</a>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
+
+  <!-- Left: Customer info -->
+  <div>
+    <div class="card mb-4">
+      <div class="card-title">Customer Details</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Name</div>
+          <div class="fw-600">{{ customer.full_name }}</div>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Email</div>
+          <a href="mailto:{{ customer.email }}" class="text-orange">{{ customer.email }}</a>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Phone</div>
+          <a href="tel:{{ customer.phone }}" class="text-orange">{{ customer.phone }}</a>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Vehicles</div>
+          {{ vehicles|length }}
+        </div>
+      </div>
+
+      {% if customer.address %}
+      <div style="margin-top:16px;">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Address</div>
+        <p style="font-size:14px; line-height:1.6;">{{ customer.address }}</p>
+      </div>
+      {% endif %}
+
+      {% if customer.notes %}
+      <div style="margin-top:16px; padding:12px; background:rgba(59,130,246,.05); border-radius:8px; border-left:3px solid var(--blue);">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Notes</div>
+        <p style="font-size:14px; line-height:1.6;">{{ customer.notes }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Vehicles -->
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-4">
+        <div class="card-title">Vehicles</div>
+        <a href="{% url 'vehicle_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">+ Add Vehicle</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Year</th><th>Make</th><th>Model</th><th>VIN</th><th>License</th><th>Mileage</th></tr>
+          </thead>
+          <tbody>
+            {% for vehicle in vehicles %}
+            <tr>
+              <td>{{ vehicle.year }}</td>
+              <td>{{ vehicle.make }}</td>
+              <td><a href="{% url 'vehicle_detail' vehicle.pk %}" class="text-orange fw-600">{{ vehicle.model }}</a></td>
+              <td>{{ vehicle.vin|truncatechars:10 }}</td>
+              <td>{{ vehicle.license_plate }}</td>
+              <td>{{ vehicle.mileage|floatformat:"0" }} km</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-muted">No vehicles on record.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Appointments -->
+  <div>
+    <div class="card">
+      <div class="flex items-center justify-between mb-4">
+        <div class="card-title">Recent Appointments</div>
+        <a href="{% url 'appointment_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">+ Book</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Time</th><th>Vehicle</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for appt in appointments %}
+            <tr>
+              <td>{{ appt.date_time|date:"M d, Y" }}</td>
+              <td>{{ appt.date_time|date:"H:i" }}</td>
+              <td>{{ appt.vehicle.make }} {{ appt.vehicle.model }}</td>
+              <td>
+                {% if appt.confirmed %}
+                  <span class="badge badge-green">Confirmed</span>
+                {% else %}
+                  <span class="badge badge-yellow">Pending</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-muted">No recent appointments.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

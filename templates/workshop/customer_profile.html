@@ -1,0 +1,27 @@
+{% extends "workshop/base.html" %}
+{% block title %}Customer Details – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Customer Details{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:720px;">
+  <div class="card-title">Your details</div>
+  <div style="margin-top:16px; line-height:1.8;">
+    {% if customer %}
+      <div><strong>Name:</strong> {{ customer.full_name }}</div>
+      <div><strong>Email:</strong> {{ customer.email }}</div>
+      <div><strong>Phone:</strong> {{ customer.phone|default:'—' }}</div>
+      <div><strong>Address:</strong> {{ customer.address|linebreaksbr|default:'—' }}</div>
+      <div><strong>Notes:</strong> {{ customer.notes|default:'None' }}</div>
+      <div><strong>Joined:</strong> {{ customer.created_at|date:"d M Y" }}</div>
+    {% else %}
+      <div><strong>Username:</strong> {{ user.username }}</div>
+      <div><strong>Email:</strong> {{ user.email }}</div>
+      <div class="text-muted" style="margin-top:12px;">No customer record is linked to this account yet.</div>
+    {% endif %}
+  </div>
+
+  <div style="margin-top:24px;">
+    <a href="{% url 'dashboard' %}" class="btn btn-secondary">Back to dashboard</a>
+  </div>
+</div>
+{% endblock %}

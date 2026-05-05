@@ -1,0 +1,72 @@
+{% extends "workshop/base.html" %}
+{% block title %}Admin Dashboard – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Admin Dashboard{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{% url 'customer_create' %}" class="btn btn-primary btn-sm">Add customer</a>
+{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  <div class="stat-card orange">
+    <div class="stat-value">{{ open_repair_orders }}</div>
+    <div class="stat-label">Open repair orders</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-value">{{ ready_for_pickup }}</div>
+    <div class="stat-label">Ready for pickup</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-value">{{ total_customers }}</div>
+    <div class="stat-label">Customers</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ todays_appointments }}</div>
+    <div class="stat-label">Appointments today</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-value">{{ low_stock_parts }}</div>
+    <div class="stat-label">Low stock alerts</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ unpaid_invoices }}</div>
+    <div class="stat-label">Unpaid invoices</div>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-title">Quick actions</div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-top:16px;">
+    <a href="{% url 'repair_order_list' %}" class="btn btn-secondary">Manage Repair Orders</a>
+    <a href="{% url 'appointment_list' %}" class="btn btn-secondary">Manage Appointments</a>
+    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Manage Invoices</a>
+    <a href="{% url 'customer_list' %}" class="btn btn-secondary">Manage Customers</a>
+    <a href="{% url 'vehicle_list' %}" class="btn btn-secondary">Manage Vehicles</a>
+    <a href="{% url 'parts_list' %}" class="btn btn-secondary">Manage Parts</a>
+    <a href="{% url 'employee_list' %}" class="btn btn-secondary">Manage Employees</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Recent repair orders</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for order in recent_orders %}
+        <tr>
+          <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+          <td>{{ order.vehicle.customer.full_name }}</td>
+          <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+          <td>{{ order.get_status_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-muted">No recent repair orders.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
