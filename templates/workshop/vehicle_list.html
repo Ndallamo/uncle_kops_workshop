@@ -1,0 +1,41 @@
+{% extends "workshop/base.html" %}
+{% block title %}Vehicles{% endblock %}
+{% block page_title %}Vehicles{% endblock %}
+{% block topbar_actions %}
+  <a href="{% url 'vehicle_create' %}" class="btn btn-primary btn-sm">+ Add Vehicle</a>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <form method="get" class="flex gap-2">
+    <input name="q" value="{{ q }}" placeholder="Search by customer, make, model, plate, or VIN…" style="max-width:320px;">
+    <button type="submit" class="btn btn-secondary">Search</button>
+    {% if q %}<a href="{% url 'vehicle_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Customer</th><th>Year</th><th>Make</th><th>Model</th><th>Plate</th><th>VIN</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for v in vehicles %}
+        <tr>
+          <td><a href="{% url 'customer_detail' v.customer.pk %}" class="text-orange">{{ v.customer.full_name }}</a></td>
+          <td>{{ v.year }}</td>
+          <td>{{ v.make }}</td>
+          <td>{{ v.model }}</td>
+          <td>{{ v.license_plate }}</td>
+          <td>{{ v.vin }}</td>
+          <td><a href="{% url 'vehicle_edit' v.pk %}" class="btn btn-secondary btn-sm">Edit</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted">No vehicles found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

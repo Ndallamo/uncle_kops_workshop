@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+{% load user_extras %}
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Uncle Kop's Workshop{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --orange:  #E8500A;
+      --orange2: #FF6B2B;
+      --dark:    #111418;
+      --darker:  #0A0C0F;
+      --panel:   #181C22;
+      --border:  #2A2F38;
+      --text:    #D4D8DE;
+      --muted:   #6B7280;
+      --green:   #22C55E;
+      --yellow:  #F59E0B;
+      --red:     #EF4444;
+      --blue:    #3B82F6;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Barlow', sans-serif;
+      background: var(--dark);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 240px;
+      min-height: 100vh;
+      background: var(--darker);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 100;
+    }
+    .sidebar-logo {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo .brand {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 22px;
+      letter-spacing: 1px;
+      color: #fff;
+      line-height: 1;
+    }
+    .sidebar-logo .brand span { color: var(--orange); }
+    .sidebar-logo .tagline {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 4px;
+    }
+
+    .nav-section { padding: 16px 0 8px; }
+    .nav-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--muted);
+      padding: 0 20px 8px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all .15s;
+      border-left: 3px solid transparent;
+    }
+    .nav-item:hover { color: var(--text); background: rgba(255,255,255,.04); }
+    .nav-item.active { color: var(--orange2); border-left-color: var(--orange); background: rgba(232,80,10,.08); }
+    .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .sidebar-footer a { color: var(--orange2); text-decoration: none; }
+
+    /* ── Main ── */
+    .main {
+      margin-left: 240px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .topbar {
+      height: 60px;
+      background: var(--darker);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 28px;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .topbar-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 20px;
+      letter-spacing: 1px;
+      color: #fff;
+      flex: 1;
+    }
+    .topbar-user {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all .15s;
+      font-family: 'Barlow', sans-serif;
+    }
+    .btn-primary   { background: var(--orange); color: #fff; }
+    .btn-primary:hover { background: var(--orange2); }
+    .btn-secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--muted); }
+    .btn-sm { padding: 5px 11px; font-size: 12px; }
+
+    .content { padding: 28px; flex: 1; }
+
+    /* ── Cards & Panels ── */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .card-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 16px;
+      letter-spacing: 1px;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    /* ── Stat Grid ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--orange);
+    }
+    .stat-card.green::before { background: var(--green); }
+    .stat-card.yellow::before { background: var(--yellow); }
+    .stat-card.blue::before  { background: var(--blue); }
+    .stat-card.red::before   { background: var(--red); }
+    .stat-value {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 36px;
+      color: #fff;
+      line-height: 1;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    /* ── Table ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(42,47,56,.6);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .badge-green  { background: rgba(34,197,94,.15);  color: var(--green); }
+    .badge-yellow { background: rgba(245,158,11,.15); color: var(--yellow); }
+    .badge-red    { background: rgba(239,68,68,.15);  color: var(--red); }
+    .badge-blue   { background: rgba(59,130,246,.15); color: var(--blue); }
+    .badge-gray   { background: rgba(107,114,128,.15);color: var(--muted); }
+    .badge-orange { background: rgba(232,80,10,.2);   color: var(--orange2); }
+
+    /* ── Forms ── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    input, select, textarea {
+      background: var(--darker);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: 'Barlow', sans-serif;
+      transition: border-color .15s;
+      width: 100%;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--orange);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+
+    /* ── Messages ── */
+    .messages { margin-bottom: 20px; }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      border-left: 4px solid;
+    }
+    .alert-success { background: rgba(34,197,94,.1);  border-color: var(--green);  color: #86efac; }
+    .alert-error   { background: rgba(239,68,68,.1);  border-color: var(--red);    color: #fca5a5; }
+    .alert-warning { background: rgba(245,158,11,.1); border-color: var(--yellow); color: #fde68a; }
+    .alert-info    { background: rgba(59,130,246,.1); border-color: var(--blue);   color: #93c5fd; }
+
+    /* ── Utilities ── */
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .gap-2 { gap: 8px; }
+    .gap-3 { gap: 12px; }
+    .mb-4  { margin-bottom: 16px; }
+    .mb-6  { margin-bottom: 24px; }
+    .text-muted { color: var(--muted); font-size: 13px; }
+    .text-orange { color: var(--orange2); }
+    .text-green  { color: var(--green); }
+    .text-red    { color: var(--red); }
+    .fw-600 { font-weight: 600; }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+{% if user.is_authenticated %}
+<!-- ── Sidebar ─────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">Uncle <span>Kop's</span><br>Workshop</div>
+    <div class="tagline">Auto Repair Management</div>
+  </div>
+
+  <nav>
+    {% with role=request.user|user_role %}
+      {% if role == 'customer' %}
+      <div class="nav-section">
+        <div class="nav-label">Customer</div>
+        <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+          <span class="icon">📊</span> Dashboard
+        </a>
+        <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🔧</span> Track repair status
+        </a>
+        <a href="{% url 'appointment_create' %}" class="nav-item {% if request.resolver_match.url_name == 'appointment_create' %}active{% endif %}">
+          <span class="icon">📅</span> Submit service request
+        </a>
+        <a href="{% url 'customer_profile' %}" class="nav-item {% if request.resolver_match.url_name == 'customer_profile' %}active{% endif %}">
+          <span class="icon">👤</span> Customer details
+        </a>
+      </div>
+      {% elif role == 'mechanic' %}
+      <div class="nav-section">
+        <div class="nav-label">Mechanic</div>
+        <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+          <span class="icon">🛠️</span> My jobs
+        </a>
+        <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🔧</span> View assigned jobs
+        </a>
+        <a href="{% url 'repair_order_list' %}?status=in_progress" class="nav-item">
+          <span class="icon">⚙️</span> Update job status
+        </a>
+        <a href="{% url 'repair_order_list' %}" class="nav-item">
+          <span class="icon">🧰</span> Log parts & labour
+        </a>
+      </div>
+      {% elif role == 'admin' %}
+      <div class="nav-section">
+        <div class="nav-label">Admin</div>
+        <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+          <span class="icon">📊</span> Admin dashboard
+        </a>
+        <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🔧</span> Repair Orders
+        </a>
+        <a href="{% url 'appointment_list' %}" class="nav-item {% if 'appointment' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">📅</span> Appointments
+        </a>
+        <a href="{% url 'invoice_list' %}" class="nav-item {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">💰</span> Invoices
+        </a>
+        <a href="{% url 'customer_list' %}" class="nav-item {% if 'customer' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">👤</span> Customers
+        </a>
+        <a href="{% url 'vehicle_list' %}" class="nav-item {% if 'vehicle' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🚗</span> Vehicles
+        </a>
+        <a href="{% url 'parts_list' %}" class="nav-item {% if 'part' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">📦</span> Parts
+        </a>
+        <a href="{% url 'service_list' %}" class="nav-item {% if 'service' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🛠️</span> Services
+        </a>
+        <a href="{% url 'employee_list' %}" class="nav-item {% if 'employee' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">👷</span> Employees
+        </a>
+      </div>
+      {% else %}
+      <div class="nav-section">
+        <div class="nav-label">Overview</div>
+        <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+          <span class="icon">📊</span> Dashboard
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Workshop</div>
+        <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🔧</span> Repair Orders
+        </a>
+        <a href="{% url 'appointment_list' %}" class="nav-item {% if 'appointment' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">📅</span> Appointments
+        </a>
+        <a href="{% url 'invoice_list' %}" class="nav-item {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">💰</span> Invoices
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Records</div>
+        <a href="{% url 'customer_list' %}" class="nav-item {% if 'customer' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">👤</span> Customers
+        </a>
+        <a href="{% url 'vehicle_list' %}" class="nav-item {% if 'vehicle' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🚗</span> Vehicles
+        </a>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Inventory</div>
+        <a href="{% url 'parts_list' %}" class="nav-item {% if 'part' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">📦</span> Parts
+        </a>
+        <a href="{% url 'service_list' %}" class="nav-item {% if 'service' in request.resolver_match.url_name %}active{% endif %}">
+          <span class="icon">🛠️</span> Services
+        </a>
+      </div>
+      {% endif %}
+    {% endwith %}
+  </nav>
+
+  <div class="sidebar-footer">
+    Logged in as <strong>{{ user.username }}</strong><br>
+    <a href="{% url 'logout' %}">Sign out</a>
+  </div>
+</aside>
+
+<!-- ── Main ────────────────────────────────── -->
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">{% block page_title %}Uncle Kop's Workshop{% endblock %}</div>
+    {% block topbar_actions %}{% endblock %}
+    <span class="topbar-user">{{ user.get_full_name|default:user.username }}</span>
+  </header>
+
+  <div class="content">
+    {% if messages %}
+    <div class="messages">
+      {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+{% else %}
+<!-- Login page layout -->
+<div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--dark);">
+  {% block login_content %}{% endblock %}
+</div>
+{% endif %}
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

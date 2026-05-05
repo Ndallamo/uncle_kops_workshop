@@ -1,0 +1,55 @@
+{% extends "workshop/base.html" %}
+{% block title %}Mechanic Dashboard – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Mechanic Dashboard{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{% url 'repair_order_list' %}" class="btn btn-primary btn-sm">View assigned jobs</a>
+{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  <div class="stat-card blue">
+    <div class="stat-value">{{ assigned_orders|length }}</div>
+    <div class="stat-label">Assigned jobs</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ active_orders|length }}</div>
+    <div class="stat-label">Active jobs</div>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-title">Action center</div>
+  <div style="margin-top:16px; display:grid; gap:12px;">
+    <div class="alert alert-info">View assigned jobs and open repair orders assigned to you.</div>
+    <div class="alert alert-info">Update job status from the repair order detail page.</div>
+    <div class="alert alert-info">Log parts and labour directly from the repair order detail workflow.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Assigned repair orders</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for order in assigned_orders %}
+        <tr>
+          <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+          <td>{{ order.vehicle.customer.full_name }}</td>
+          <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+          <td>{{ order.get_status_display }}</td>
+          <td>
+            <a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-secondary btn-sm">Review</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">No assigned jobs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

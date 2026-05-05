@@ -1,0 +1,103 @@
+{% extends "workshop/base.html" %}
+{% block title %}Dashboard – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stat Cards -->
+<div class="stat-grid">
+  <div class="stat-card orange">
+    <div class="stat-value">{{ open_repair_orders }}</div>
+    <div class="stat-label">Open Repair Orders</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-value">{{ ready_for_pickup }}</div>
+    <div class="stat-label">Ready for Pickup</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-value">{{ total_customers }}</div>
+    <div class="stat-label">Total Customers</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ todays_appointments }}</div>
+    <div class="stat-label">Today's Appointments</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-value">{{ low_stock_parts }}</div>
+    <div class="stat-label">Low Stock Alerts</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ unpaid_invoices }}</div>
+    <div class="stat-label">Unpaid Invoices</div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+
+  <!-- Recent Repair Orders -->
+  <div class="card">
+    <div class="flex items-center justify-between mb-4">
+      <div class="card-title">Recent Repair Orders</div>
+      <a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">+ New RO</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for order in recent_orders %}
+          <tr>
+            <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+            <td>{{ order.vehicle.customer.full_name }}</td>
+            <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+            <td>
+              {% if order.status == 'completed' %}<span class="badge badge-green">{{ order.get_status_display }}</span>
+              {% elif order.status == 'in_progress' %}<span class="badge badge-blue">{{ order.get_status_display }}</span>
+              {% elif order.status == 'ready' %}<span class="badge badge-yellow">{{ order.get_status_display }}</span>
+              {% elif order.status == 'cancelled' %}<span class="badge badge-red">{{ order.get_status_display }}</span>
+              {% else %}<span class="badge badge-gray">{{ order.get_status_display }}</span>{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No repair orders yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Upcoming Appointments -->
+  <div class="card">
+    <div class="flex items-center justify-between mb-4">
+      <div class="card-title">Upcoming Appointments</div>
+      <a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">+ Book</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date & Time</th><th>Customer</th><th>Vehicle</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for appt in upcoming_appointments %}
+          <tr>
+            <td class="fw-600">{{ appt.date_time|date:"d M, H:i" }}</td>
+            <td>{{ appt.customer.full_name }}</td>
+            <td>{{ appt.vehicle.make }} {{ appt.vehicle.model }}</td>
+            <td>
+              {% if appt.confirmed %}
+                <span class="badge badge-green">Confirmed</span>
+              {% else %}
+                <span class="badge badge-yellow">Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="text-muted">No upcoming appointments.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "workshop/base.html" %}
+{% block title %}Repair Orders{% endblock %}
+{% block page_title %}Repair Orders{% endblock %}
+{% block topbar_actions %}
+  <a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">+ New RO</a>
+{% endblock %}
+
+{% block content %}
+<!-- Filter bar -->
+<div class="card mb-6">
+  <div class="flex gap-2 flex-wrap">
+    <a href="{% url 'repair_order_list' %}" class="btn {% if not status %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
+    {% for val, label in status_choices %}
+    <a href="?status={{ val }}" class="btn {% if status == val %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">{{ label }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>RO#</th><th>Vehicle</th><th>Customer</th><th>Technician</th><th>Status</th><th>Approved</th><th>Date</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td><a href="{% url 'repair_order_detail' o.pk %}" class="text-orange fw-600">#{{ o.pk }}</a></td>
+          <td>{{ o.vehicle.year }} {{ o.vehicle.make }} {{ o.vehicle.model }}</td>
+          <td>{{ o.vehicle.customer.full_name }}</td>
+          <td>{{ o.assigned_tech.get_full_name|default:o.assigned_tech.username|default:"—" }}</td>
+          <td>
+            {% if o.status == 'completed' %}<span class="badge badge-green">{{ o.get_status_display }}</span>
+            {% elif o.status == 'in_progress' %}<span class="badge badge-blue">{{ o.get_status_display }}</span>
+            {% elif o.status == 'ready' %}<span class="badge badge-yellow">{{ o.get_status_display }}</span>
+            {% elif o.status == 'cancelled' %}<span class="badge badge-red">{{ o.get_status_display }}</span>
+            {% elif o.status == 'waiting' %}<span class="badge badge-orange">{{ o.get_status_display }}</span>
+            {% else %}<span class="badge badge-gray">{{ o.get_status_display }}</span>{% endif %}
+          </td>
+          <td>{% if o.approved %}<span class="text-green">✔ Yes</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="text-muted">{{ o.date_created|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'repair_order_detail' o.pk %}" class="btn btn-secondary btn-sm">View</a>
+            <a href="{% url 'repair_order_edit' o.pk %}" class="btn btn-secondary btn-sm">Edit</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted">No repair orders found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
