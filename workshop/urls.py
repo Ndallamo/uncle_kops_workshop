@@ -30,6 +30,7 @@ urlpatterns = [
     path('invoices/',               views.invoice_list,           name='invoice_list'),
     path('invoices/new/',           views.invoice_create,         name='invoice_create'),
     path('invoices/<int:pk>/',      views.invoice_detail,         name='invoice_detail'),
+    path('invoices/<int:pk>/pay/',  views.invoice_pay,            name='invoice_pay'),
     path('invoices/<int:pk>/edit/', views.invoice_edit,           name='invoice_edit'),
 
     # Appointments

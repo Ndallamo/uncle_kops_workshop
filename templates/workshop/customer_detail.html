@@ -2,8 +2,11 @@
 {% block title %}{{ customer.full_name }} – Uncle Kop's Workshop{% endblock %}
 {% block page_title %}{{ customer.full_name }}{% endblock %}
 {% block topbar_actions %}
-  <a href="{% url 'customer_edit' customer.pk %}" class="btn btn-secondary btn-sm">Edit Customer</a>
-  <a href="{% url 'customer_list' %}" class="btn btn-secondary btn-sm">← All Customers</a>
+  <div class="flex gap-2" style="flex-wrap:wrap; align-items:center; gap:10px;">
+    <a href="{% url 'customer_edit' customer.pk %}" class="btn btn-secondary btn-sm">Edit customer</a>
+    <a href="{% url 'vehicle_create' %}?customer={{ customer.pk }}" class="btn btn-secondary btn-sm">Add vehicle</a>
+    <a href="{% url 'appointment_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">Book appointment</a>
+  </div>
 {% endblock %}
 
 {% block content %}
@@ -13,7 +16,8 @@
   <div>
     <div class="card mb-4">
       <div class="card-title">Customer Details</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="page-subtitle">Contact information and recent status for this customer. Use the actions above to complete the next task.</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px;">
         <div>
           <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Name</div>
           <div class="fw-600">{{ customer.full_name }}</div>

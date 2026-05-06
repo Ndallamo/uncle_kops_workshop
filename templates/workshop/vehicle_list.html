@@ -1,4 +1,5 @@
 {% extends "workshop/base.html" %}
+{% load user_extras %}
 {% block title %}Vehicles{% endblock %}
 {% block page_title %}Vehicles{% endblock %}
 {% block topbar_actions %}
@@ -29,7 +30,15 @@
           <td>{{ v.model }}</td>
           <td>{{ v.license_plate }}</td>
           <td>{{ v.vin }}</td>
-          <td><a href="{% url 'vehicle_edit' v.pk %}" class="btn btn-secondary btn-sm">Edit</a></td>
+          <td>
+            {% with role=request.user|user_role %}
+              {% if role != 'customer' %}
+                <a href="{% url 'vehicle_edit' v.pk %}" class="btn btn-secondary btn-sm">Edit</a>
+              {% else %}
+                <span class="text-muted" style="font-size:12px;">View only</span>
+              {% endif %}
+            {% endwith %}
+          </td>
         </tr>
         {% empty %}
         <tr><td colspan="7" class="text-muted">No vehicles found.</td></tr>

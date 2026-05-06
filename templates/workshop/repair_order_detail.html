@@ -2,11 +2,20 @@
 {% block title %}RO #{{ order.pk }}{% endblock %}
 {% block page_title %}Repair Order #{{ order.pk }}{% endblock %}
 {% block topbar_actions %}
-  <a href="{% url 'repair_order_edit' order.pk %}" class="btn btn-secondary btn-sm">Edit RO</a>
-  <a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">← All ROs</a>
+  <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'repair_order_edit' order.pk %}" class="btn btn-secondary btn-sm">Edit RO</a>
+    {% if not is_customer %}
+      <a href="{% url 'invoice_create' %}?ro={{ order.pk }}" class="btn btn-primary btn-sm">Create invoice</a>
+    {% endif %}
+    <a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">← All ROs</a>
+  </div>
 {% endblock %}
 
 {% block content %}
+<div class="card mb-6">
+  <div class="card-title">What to do next</div>
+  <div class="context-note">Confirm the order details, add labor and parts, then generate the invoice when the work is complete.</div>
+</div>
 <div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
 
   <!-- Left: RO info -->
@@ -28,7 +37,7 @@
         </div>
         <div>
           <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Technician</div>
-          {{ order.assigned_tech.get_full_name|default:order.assigned_tech.username|default:"Unassigned" }}
+          {% if order.assigned_tech %}{{ order.assigned_tech.get_full_name|default:order.assigned_tech.username }}{% else %}Unassigned{% endif %}
         </div>
         <div>
           <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Mileage In</div>
@@ -53,6 +62,7 @@
       {% endif %}
     </div>
 
+    {% if not is_customer %}
     <!-- Labor Lines -->
     <div class="card mb-4">
       <div class="flex items-center justify-between mb-4">
@@ -110,8 +120,10 @@
         </tbody>
       </table>
     </div>
+    {% endif %}
   </div>
 
+  {% if not is_customer %}
   <!-- Right: Summary -->
   <div>
     <div class="card" style="position:sticky; top:80px;">
@@ -144,5 +156,26 @@
       </div>
     </div>
   </div>
+  {% else %}
+  <div>
+    <div class="card" style="position:sticky; top:80px;">
+      <div class="card-title">Order Summary</div>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div class="flex justify-between">
+          <span class="text-muted">Status</span>
+          <span class="fw-600">{{ order.get_status_display }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-muted">Last updated</span>
+          <span class="fw-600">{{ order.date_updated|date:"d M Y" }}</span>
+        </div>
+      </div>
+      <div style="margin-top:12px; font-size:12px; color:var(--muted);">
+        Created: {{ order.date_created|date:"d M Y H:i" }}<br>
+        Updated: {{ order.date_updated|date:"d M Y H:i" }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

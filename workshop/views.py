@@ -111,23 +111,44 @@ def dashboard(request):
         customer = Customer.objects.filter(email=request.user.email).first()
         repair_orders = []
         pending_approval = []
+        notifications = []
         if customer:
             repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).order_by('-date_created')
             pending_approval = repair_orders.filter(approved=False).order_by('-date_created')
+
+            for order in repair_orders[:3]:
+                if order.status == 'pending':
+                    notifications.append(f"RO#{order.pk} is pending review by a mechanic.")
+                elif order.status == 'in_progress':
+                    notifications.append(f"RO#{order.pk} is now in progress.")
+                elif order.status == 'waiting':
+                    notifications.append(f"RO#{order.pk} is waiting for parts.")
+                elif order.status == 'ready':
+                    notifications.append(f"RO#{order.pk} is ready for pickup.")
+                elif order.status == 'completed':
+                    notifications.append(f"RO#{order.pk} has been completed.")
+
+            if pending_approval.exists():
+                notifications.insert(0, 'You have cost approvals waiting for review.')
+
+        if request.session.pop('new_service_request', False):
+            notifications.insert(0, 'Your service request has been submitted. A mechanic will review it and update your vehicle status soon.')
 
         return render(request, 'workshop/customer_dashboard.html', {
             'customer': customer,
             'repair_orders': repair_orders,
             'pending_approval': pending_approval,
-            'notifications': [],
+            'notifications': notifications,
         })
 
     if role == 'mechanic':
         assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(assigned_tech=request.user).order_by('-date_created')
         active_orders = assigned_orders.exclude(status='completed')[:8]
+        pending_orders = RepairOrder.objects.select_related('vehicle__customer').filter(status='pending', assigned_tech__isnull=True).order_by('-date_created')[:8]
         return render(request, 'workshop/mechanic_dashboard.html', {
             'assigned_orders': assigned_orders,
             'active_orders': active_orders,
+            'pending_orders': pending_orders,
         })
 
     if role == 'admin':
@@ -192,7 +213,30 @@ def customer_detail(request, pk):
 @login_required
 def customer_profile(request):
     customer = Customer.objects.filter(email=request.user.email).first()
-    return render(request, 'workshop/customer_profile.html', {'customer': customer})
+    if not customer:
+        customer = Customer.objects.create(
+            first_name=request.user.first_name or request.user.username,
+            last_name='',
+            email=request.user.email,
+            phone='',
+            address='',
+            notes='',
+        )
+
+    if request.method == 'POST':
+        form = CustomerForm(request.POST, instance=customer)
+        if form.is_valid():
+            customer = form.save()
+            request.user.email = customer.email
+            request.user.first_name = customer.first_name
+            request.user.last_name = customer.last_name
+            request.user.save()
+            messages.success(request, 'Your profile has been updated.')
+            return redirect('customer_profile')
+    else:
+        form = CustomerForm(instance=customer)
+
+    return render(request, 'workshop/customer_profile.html', {'customer': customer, 'form': form})
 
 
 @login_required
@@ -241,9 +285,15 @@ def vehicle_create(request):
     customer_id = request.GET.get('customer')
     if customer_id:
         initial['customer'] = customer_id
-    form = VehicleForm(request.POST or None, initial=initial)
+    form = VehicleForm(request.POST or None, initial=initial, user=request.user)
     if form.is_valid():
-        vehicle = form.save()
+        vehicle = form.save(commit=False)
+        profile = getattr(request.user, 'userprofile', None)
+        if profile and profile.role == 'customer':
+            customer = Customer.objects.filter(email=request.user.email).first()
+            if customer:
+                vehicle.customer = customer
+        vehicle.save()
         messages.success(request, f"Vehicle '{vehicle}' added.")
         return redirect('vehicle_detail', pk=vehicle.pk)
     return render(request, 'workshop/vehicle_form.html', {'form': form, 'title': 'Add Vehicle'})
@@ -252,6 +302,10 @@ def vehicle_create(request):
 @login_required
 def vehicle_edit(request, pk):
     vehicle = get_object_or_404(Vehicle, pk=pk)
+    profile = getattr(request.user, 'userprofile', None)
+    if profile and profile.role == 'customer':
+        messages.error(request, 'Customers cannot modify vehicle information.')
+        return redirect('vehicle_detail', pk=pk)
     form = VehicleForm(request.POST or None, instance=vehicle)
     if form.is_valid():
         form.save()
@@ -286,15 +340,29 @@ def repair_order_list(request):
 @login_required
 def repair_order_detail(request, pk):
     order = get_object_or_404(RepairOrder, pk=pk)
-    labor_lines = order.labor_lines.select_related('service_item')
-    parts_lines = order.parts_lines.select_related('part')
+    profile = getattr(request.user, 'userprofile', None)
+    is_customer = profile and profile.role == 'customer'
+    if is_customer:
+        labor_lines = order.labor_lines.none()
+        parts_lines = order.parts_lines.none()
+    else:
+        labor_lines = order.labor_lines.select_related('service_item')
+        parts_lines = order.parts_lines.select_related('part')
     return render(request, 'workshop/repair_order_detail.html', {
-        'order': order, 'labor_lines': labor_lines, 'parts_lines': parts_lines,
+        'order': order,
+        'labor_lines': labor_lines,
+        'parts_lines': parts_lines,
+        'is_customer': is_customer,
     })
 
 
 @login_required
 def repair_order_create(request):
+    profile = getattr(request.user, 'userprofile', None)
+    if profile and profile.role == 'customer':
+        messages.error(request, 'Customers may not create repair orders directly. Please submit a service request instead.')
+        return redirect('dashboard')
+
     form = RepairOrderForm(request.POST or None)
     if form.is_valid():
         order = form.save()
@@ -306,6 +374,11 @@ def repair_order_create(request):
 @login_required
 def repair_order_edit(request, pk):
     order = get_object_or_404(RepairOrder, pk=pk)
+    profile = getattr(request.user, 'userprofile', None)
+    if profile and profile.role == 'customer':
+        messages.error(request, 'Customers may not update repair order status. A mechanic must update the status for you.')
+        return redirect('dashboard')
+
     form = RepairOrderForm(request.POST or None, instance=order)
     if form.is_valid():
         form.save()
@@ -345,21 +418,50 @@ def add_parts_line(request, ro_pk):
 # ─────────────────────────────────────────────
 @login_required
 def invoice_list(request):
+    profile = getattr(request.user, 'userprofile', None)
     invoices = Invoice.objects.select_related('repair_order__vehicle__customer').order_by('-issue_date')
+    if profile and profile.role == 'customer':
+        customer = Customer.objects.filter(email=request.user.email).first()
+        if customer:
+            invoices = invoices.filter(repair_order__vehicle__customer=customer)
+        else:
+            invoices = invoices.none()
+
     status = request.GET.get('status', '')
     if status:
         invoices = invoices.filter(payment_status=status)
-    return render(request, 'workshop/invoice_list.html', {'invoices': invoices, 'status': status})
+
+    return render(request, 'workshop/invoice_list.html', {
+        'invoices': invoices,
+        'status': status,
+        'role': profile.role if profile else '',
+    })
 
 
 @login_required
 def invoice_detail(request, pk):
+    profile = getattr(request.user, 'userprofile', None)
     invoice = get_object_or_404(Invoice, pk=pk)
-    return render(request, 'workshop/invoice_detail.html', {'invoice': invoice})
+    is_customer = profile and profile.role == 'customer'
+    if is_customer:
+        customer = Customer.objects.filter(email=request.user.email).first()
+        if invoice.repair_order.vehicle.customer != customer:
+            messages.error(request, 'Access denied.')
+            return redirect('dashboard')
+
+    return render(request, 'workshop/invoice_detail_fixed.html', {
+        'invoice': invoice,
+        'is_customer': is_customer,
+    })
 
 
 @login_required
 def invoice_create(request):
+    profile = getattr(request.user, 'userprofile', None)
+    if profile and profile.role == 'customer':
+        messages.error(request, 'Customers may not create invoices.')
+        return redirect('invoice_list')
+
     form = InvoiceForm(request.POST or None)
     if form.is_valid():
         invoice = form.save()
@@ -370,6 +472,11 @@ def invoice_create(request):
 
 @login_required
 def invoice_edit(request, pk):
+    profile = getattr(request.user, 'userprofile', None)
+    if profile and profile.role == 'customer':
+        messages.error(request, 'Customers may not edit invoices. Please make a payment from the invoice page if required.')
+        return redirect('invoice_detail', pk=pk)
+
     invoice = get_object_or_404(Invoice, pk=pk)
     form = InvoiceForm(request.POST or None, instance=invoice)
     if form.is_valid():
@@ -377,6 +484,29 @@ def invoice_edit(request, pk):
         messages.success(request, "Invoice updated.")
         return redirect('invoice_detail', pk=pk)
     return render(request, 'workshop/invoice_form.html', {'form': form, 'title': 'Edit Invoice', 'invoice': invoice})
+
+
+@login_required
+def invoice_pay(request, pk):
+    profile = getattr(request.user, 'userprofile', None)
+    if not profile or profile.role != 'customer':
+        messages.error(request, 'Only customers can make payments for invoices.')
+        return redirect('invoice_detail', pk=pk)
+
+    customer = Customer.objects.filter(email=request.user.email).first()
+    invoice = get_object_or_404(Invoice, pk=pk)
+    if invoice.repair_order.vehicle.customer != customer:
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        invoice.payment_status = 'paid'
+        invoice.payment_method = request.POST.get('payment_method', invoice.payment_method or 'card')
+        invoice.save()
+        messages.success(request, f'Invoice #{invoice.pk} marked as paid. Thank you for your payment.')
+        return redirect('invoice_detail', pk=pk)
+
+    return render(request, 'workshop/invoice_payment.html', {'invoice': invoice})
 
 
 # ─────────────────────────────────────────────
@@ -397,18 +527,60 @@ def appointment_list(request):
 
 @login_required
 def appointment_create(request):
-    form = AppointmentForm(request.POST or None)
+    form = AppointmentForm(request.POST or None, user=request.user)
     if form.is_valid():
-        appt = form.save()
-        messages.success(request, "Appointment booked.")
-        return redirect('appointment_list')
+        appt = form.save(commit=False)
+        profile = getattr(request.user, 'userprofile', None)
+        if profile and profile.role == 'customer':
+            customer = Customer.objects.filter(email=request.user.email).first()
+            if not customer:
+                customer = Customer.objects.create(
+                    first_name=request.user.first_name or request.user.username,
+                    last_name=request.user.last_name or '',
+                    email=request.user.email,
+                    phone='',
+                    address='',
+                    notes='',
+                )
+            appt.customer = customer
+            vehicle_id = request.POST.get('vehicle')
+            if not vehicle_id:
+                vehicle_text = form.cleaned_data.get('vehicle_text')
+                if vehicle_text and customer:
+                    vehicle = Vehicle.objects.create(
+                        customer=customer,
+                        make=vehicle_text,
+                        model='',
+                        year=0,
+                        vin='',
+                        license_plate='',
+                        color='',
+                        mileage=0,
+                    )
+                    appt.vehicle = vehicle
+        appt.save()
+
+        if appt.vehicle_id:
+            RepairOrder.objects.create(
+                vehicle=appt.vehicle,
+                assigned_tech=None,
+                status='pending',
+                description=appt.service_desc or 'New service request',
+                internal_notes=f"Service request booked for appointment {appt.date_time:%Y-%m-%d %H:%M}",
+                mileage_in=appt.vehicle.mileage or 0,
+                approved=False,
+            )
+
+        request.session['new_service_request'] = True
+        messages.success(request, 'Service request submitted. A mechanic will review it and update your vehicle status soon.')
+        return redirect('dashboard')
     return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
 
 
 @login_required
 def appointment_edit(request, pk):
     appt = get_object_or_404(Appointment, pk=pk)
-    form = AppointmentForm(request.POST or None, instance=appt)
+    form = AppointmentForm(request.POST or None, instance=appt, user=request.user)
     if form.is_valid():
         form.save()
         messages.success(request, "Appointment updated.")

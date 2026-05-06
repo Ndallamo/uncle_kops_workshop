@@ -245,6 +245,36 @@
     .badge-gray   { background: rgba(107,114,128,.15);color: var(--muted); }
     .badge-orange { background: rgba(232,80,10,.2);   color: var(--orange2); }
 
+    .priority-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+    .priority-high { background: rgba(239,68,68,.12); color: var(--red); }
+    .priority-medium { background: rgba(245,158,11,.12); color: var(--yellow); }
+    .priority-low { background: rgba(59,130,246,.12); color: var(--blue); }
+
+    .page-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .context-note {
+      display: block;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
     /* ── Forms ── */
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; }
@@ -260,6 +290,16 @@
       font-family: 'Barlow', sans-serif;
       transition: border-color .15s;
       width: 100%;
+    }
+    input[type="date"] {
+      color: var(--text);
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1) brightness(1.2);
+      opacity: 0.9;
+    }
+    input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+      color: var(--text);
     }
     input:focus, select:focus, textarea:focus {
       outline: none;

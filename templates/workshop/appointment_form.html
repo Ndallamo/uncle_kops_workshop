@@ -12,18 +12,22 @@
       {% csrf_token %}
       <div class="form-grid">
         {% for field in form %}
-          <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">
-            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {% if field.is_hidden %}
             {{ field }}
-            {% if field.errors %}
-              {% for error in field.errors %}
-                <span style="color:var(--red); font-size:12px;">{{ error }}</span>
-              {% endfor %}
-            {% endif %}
-            {% if field.help_text %}
-              <span style="color:var(--muted); font-size:12px;">{{ field.help_text }}</span>
-            {% endif %}
-          </div>
+          {% else %}
+            <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.errors %}
+                {% for error in field.errors %}
+                  <span style="color:var(--red); font-size:12px;">{{ error }}</span>
+                {% endfor %}
+              {% endif %}
+              {% if field.help_text %}
+                <span style="color:var(--muted); font-size:12px;">{{ field.help_text }}</span>
+              {% endif %}
+            </div>
+          {% endif %}
         {% endfor %}
       </div>
       <div style="margin-top:24px; display:flex; gap:10px;">

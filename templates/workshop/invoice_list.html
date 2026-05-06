@@ -2,7 +2,9 @@
 {% block title %}Invoices{% endblock %}
 {% block page_title %}Invoices{% endblock %}
 {% block topbar_actions %}
-  <a href="{% url 'invoice_create' %}" class="btn btn-primary btn-sm">+ New Invoice</a>
+  {% if role != 'customer' %}
+    <a href="{% url 'invoice_create' %}" class="btn btn-primary btn-sm">+ New Invoice</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -36,7 +38,9 @@
           </td>
           <td>
             <a href="{% url 'invoice_detail' inv.pk %}" class="btn btn-secondary btn-sm">View</a>
+            {% if role != 'customer' %}
             <a href="{% url 'invoice_edit' inv.pk %}" class="btn btn-secondary btn-sm">Edit</a>
+            {% endif %}
           </td>
         </tr>
         {% empty %}
