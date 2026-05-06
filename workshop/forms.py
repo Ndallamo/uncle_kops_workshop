@@ -22,6 +22,17 @@ class VehicleForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'rows': 3}),
         }
 
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user is not None:
+            profile = getattr(user, 'userprofile', None)
+            if profile and profile.role == 'customer':
+                customer = Customer.objects.filter(email=user.email).first()
+                if customer:
+                    self.fields['customer'].widget = forms.HiddenInput()
+                    self.fields['customer'].initial = customer.pk
+                    self.fields['customer'].help_text = 'This vehicle will be saved to your customer account.'
+
 
 class RepairOrderForm(forms.ModelForm):
     class Meta:
@@ -57,14 +68,46 @@ class InvoiceForm(forms.ModelForm):
 
 
 class AppointmentForm(forms.ModelForm):
+    vehicle_text = forms.CharField(
+        label='Vehicle details',
+        required=False,
+        help_text='Type your vehicle make/model if you are not selecting an existing vehicle.',
+        widget=forms.TextInput(attrs={'placeholder': 'e.g. Toyota Corolla 2018'})
+    )
+
     class Meta:
         model  = Appointment
-        fields = ['customer', 'vehicle', 'date_time', 'duration', 'service_desc', 'confirmed', 'notes']
+        fields = ['customer', 'vehicle', 'vehicle_text', 'date_time', 'service_desc', 'confirmed', 'notes']
         widgets = {
-            'date_time':    forms.DateTimeInput(attrs={'type': 'datetime-local'}),
+            'date_time':    forms.DateInput(attrs={'type': 'date'}),
             'service_desc': forms.Textarea(attrs={'rows': 3}),
             'notes':        forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user is not None:
+            profile = getattr(user, 'userprofile', None)
+            if profile and profile.role == 'customer':
+                customer = Customer.objects.filter(email=user.email).first()
+                if customer:
+                    self.fields['customer'].widget = forms.HiddenInput()
+                    self.fields['customer'].initial = customer.pk
+                    self.fields['customer'].required = False
+                self.fields['vehicle'].widget = forms.HiddenInput()
+                self.fields['vehicle'].required = False
+                self.fields['vehicle'].help_text = 'Customers can type vehicle details instead of selecting a saved vehicle.'
+            else:
+                self.fields['vehicle_text'].widget = forms.HiddenInput()
+                self.fields['vehicle_text'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        vehicle = cleaned_data.get('vehicle')
+        vehicle_text = cleaned_data.get('vehicle_text')
+        if not vehicle and not vehicle_text:
+            raise forms.ValidationError('Please provide vehicle details for the appointment.')
+        return cleaned_data
 
 
 class PartForm(forms.ModelForm):
@@ -116,8 +159,6 @@ class EmployeeEditForm(forms.ModelForm):
 class UserRegistrationForm(UserCreationForm):
     ROLE_CHOICES = [
         ('customer', 'Customer'),
-        ('mechanic', 'Mechanic'),
-        ('admin', 'Admin'),
     ]
 
     email = forms.EmailField(required=True)

@@ -1,0 +1,27 @@
+{% extends "workshop/base.html" %}
+{% block title %}Pay Invoice #{{ invoice.pk }} – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Invoice Payment{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:560px; margin:0 auto;">
+  <div class="card-title">Pay Invoice #{{ invoice.pk }}</div>
+  <div style="margin-bottom:24px;">
+    <p>Amount due: <strong>R {{ invoice.total_due }}</strong></p>
+    <p>Repair order: <a href="{% url 'repair_order_detail' invoice.repair_order.pk %}">#{{ invoice.repair_order.pk }}</a></p>
+    <p>Customer: {{ invoice.repair_order.vehicle.customer.full_name }}</p>
+  </div>
+
+  <form method="post" style="display:flex; flex-direction:column; gap:16px;">
+    {% csrf_token %}
+    <label class="form-label">Payment Method</label>
+    <select name="payment_method" class="form-control">
+      <option value="card" selected>Card</option>
+      <option value="cash">Cash</option>
+      <option value="bank_transfer">Bank Transfer</option>
+    </select>
+
+    <button type="submit" class="btn btn-primary">Submit Payment</button>
+    <a href="{% url 'invoice_detail' invoice.pk %}" class="btn btn-secondary">Back to Invoice</a>
+  </form>
+</div>
+{% endblock %}

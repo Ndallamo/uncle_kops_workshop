@@ -3,10 +3,18 @@
 {% block page_title %}Admin Dashboard{% endblock %}
 
 {% block topbar_actions %}
-  <a href="{% url 'customer_create' %}" class="btn btn-primary btn-sm">Add customer</a>
+  <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'customer_create' %}" class="btn btn-primary btn-sm">Add customer</a>
+    <a href="{% url 'repair_order_create' %}" class="btn btn-secondary btn-sm">New repair order</a>
+    <a href="{% url 'employee_list' %}" class="btn btn-secondary btn-sm">Manage employees</a>
+  </div>
 {% endblock %}
 
 {% block content %}
+<div class="card mb-6">
+  <div class="card-title">Overview</div>
+  <div class="context-note">Track core shop health and jump to your next priority task from one place.</div>
+</div>
 <div class="stat-grid">
   <div class="stat-card orange">
     <div class="stat-value">{{ open_repair_orders }}</div>
@@ -35,7 +43,12 @@
 </div>
 
 <div class="card mb-6">
-  <div class="card-title">Quick actions</div>
+  <div class="flex items-center justify-between mb-4" style="flex-wrap:wrap; gap:12px;">
+    <div>
+      <div class="card-title">Quick actions</div>
+      <div class="context-note">Single-click shortcuts for the tasks you perform most often.</div>
+    </div>
+  </div>
   <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-top:16px;">
     <a href="{% url 'repair_order_list' %}" class="btn btn-secondary">Manage Repair Orders</a>
     <a href="{% url 'appointment_list' %}" class="btn btn-secondary">Manage Appointments</a>

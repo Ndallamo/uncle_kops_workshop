@@ -7,9 +7,13 @@
 
 {% block content %}
 <div class="card mb-6">
-  <form method="get" class="flex gap-2">
-    <input name="q" value="{{ q }}" placeholder="Search by name, email, phone…" style="max-width:320px;">
-    <button type="submit" class="btn btn-secondary">Search</button>
+  <form method="get" class="flex gap-2" style="flex-wrap:wrap; align-items:flex-end;">
+    <div style="flex:1; min-width:220px;">
+      <label for="search_query" style="display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px;">Find customers quickly</label>
+      <input id="search_query" name="q" value="{{ q }}" placeholder="Search by name, email, phone…" style="width:100%; max-width:100%;">
+      {% if q %}<div class="context-note">Showing results for “{{ q }}”. <a href="{% url 'customer_list' %}" style="color:var(--orange2); text-decoration:underline;">Clear search</a></div>{% endif %}
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
     {% if q %}<a href="{% url 'customer_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
   </form>
 </div>

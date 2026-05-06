@@ -3,10 +3,17 @@
 {% block page_title %}Mechanic Dashboard{% endblock %}
 
 {% block topbar_actions %}
-  <a href="{% url 'repair_order_list' %}" class="btn btn-primary btn-sm">View assigned jobs</a>
+  <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'repair_order_list' %}" class="btn btn-primary btn-sm">View all jobs</a>
+    <a href="{% url 'repair_order_create' %}" class="btn btn-secondary btn-sm">Create new job</a>
+  </div>
 {% endblock %}
 
 {% block content %}
+<div class="card mb-6">
+  <div class="card-title">Your work today</div>
+  <div class="context-note">See your assigned jobs, stay on top of active work, and move to the next repair with one click.</div>
+</div>
 <div class="stat-grid">
   <div class="stat-card blue">
     <div class="stat-value">{{ assigned_orders|length }}</div>
@@ -16,16 +23,48 @@
     <div class="stat-value">{{ active_orders|length }}</div>
     <div class="stat-label">Active jobs</div>
   </div>
+  <div class="stat-card green">
+    <div class="stat-value">{{ pending_orders|length }}</div>
+    <div class="stat-label">Pending requests</div>
+  </div>
 </div>
 
 <div class="card mb-6">
   <div class="card-title">Action center</div>
+  <div class="context-note">Focus on status updates first. Open the most urgent order, make your changes, then move to the next one.</div>
   <div style="margin-top:16px; display:grid; gap:12px;">
     <div class="alert alert-info">View assigned jobs and open repair orders assigned to you.</div>
     <div class="alert alert-info">Update job status from the repair order detail page.</div>
     <div class="alert alert-info">Log parts and labour directly from the repair order detail workflow.</div>
   </div>
 </div>
+
+{% if pending_orders %}
+<div class="card mb-6">
+  <div class="card-title">Pending service requests</div>
+  <div class="context-note">New customer requests waiting for assignment. Assign yourself to start working on them.</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Requested</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for order in pending_orders %}
+        <tr>
+          <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+          <td>{{ order.vehicle.customer.full_name }}</td>
+          <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+          <td>{{ order.date_created|date:"d M Y" }}</td>
+          <td>
+            <a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-primary btn-sm">Assign & Review</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-title">Assigned repair orders</div>
