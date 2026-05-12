@@ -22,6 +22,22 @@
       --red:     #EF4444;
       --blue:    #3B82F6;
     }
+
+    /* Light mode */
+    html.light-mode {
+      --orange:  #E8500A;
+      --orange2: #FF6B2B;
+      --dark:    #F9FAFB;
+      --darker:  #F3F4F6;
+      --panel:   #FFFFFF;
+      --border:  #E5E7EB;
+      --text:    #1F2937;
+      --muted:   #4B5563;
+      --green:   #16A34A;
+      --yellow:  #D97706;
+      --red:     #DC2626;
+      --blue:    #2563EB;
+    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -334,6 +350,165 @@
     .text-green  { color: var(--green); }
     .text-red    { color: var(--red); }
     .fw-600 { font-weight: 600; }
+
+    /* ── Theme Toggle Button ── */
+    .theme-toggle {
+      background: var(--orange);
+      border: 2px solid var(--orange);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 18px;
+      transition: all .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      margin: 0 8px;
+    }
+    .theme-toggle:hover {
+      background: var(--orange2);
+      border-color: var(--orange2);
+      transform: scale(1.05);
+    }
+    .theme-toggle:active {
+      transform: scale(0.95);
+    }
+
+    /* Light mode adjustments */
+    html.light-mode input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: none;
+      opacity: 0.7;
+    }
+    html.light-mode .card,
+    html.light-mode .stat-card,
+    html.light-mode .theme-toggle {
+      box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    }
+    html.light-mode .sidebar-logo .brand {
+      color: #000000;
+    }
+    html.light-mode .sidebar-logo .brand span {
+      color: var(--orange);
+    }
+    html.light-mode .nav-label {
+      color: #4B5563;
+    }
+    html.light-mode .nav-item {
+      color: #6B7280;
+    }
+    html.light-mode .nav-item:hover {
+      color: #1F2937;
+      background: rgba(232,80,10,.04);
+    }
+    html.light-mode .sidebar-footer {
+      color: #4B5563;
+    }
+    html.light-mode .sidebar-footer a {
+      color: var(--orange2);
+    }
+    html.light-mode .topbar-title {
+      color: #000000;
+    }
+    html.light-mode .topbar-user {
+      color: #4B5563;
+    }
+    html.light-mode .card-title {
+      color: #1F2937;
+    }
+    html.light-mode .stat-value {
+      color: #1F2937;
+    }
+    html.light-mode .stat-label {
+      color: #4B5563;
+    }
+    html.light-mode .page-subtitle {
+      color: #4B5563;
+    }
+    html.light-mode .context-note {
+      color: #4B5563;
+    }
+    html.light-mode label {
+      color: #4B5563;
+    }
+    html.light-mode input,
+    html.light-mode select,
+    html.light-mode textarea {
+      background: #FFFFFF;
+      border-color: #D1D5DB;
+      color: #1F2937;
+    }
+    html.light-mode input:focus,
+    html.light-mode select:focus,
+    html.light-mode textarea:focus {
+      border-color: var(--orange);
+      background: #FFFFFF;
+    }
+    html.light-mode .badge-green {
+      background: rgba(22,163,74,.12);
+      color: #16A34A;
+    }
+    html.light-mode .badge-yellow {
+      background: rgba(217,119,6,.12);
+      color: #D97706;
+    }
+    html.light-mode .badge-red {
+      background: rgba(220,38,38,.12);
+      color: #DC2626;
+    }
+    html.light-mode .badge-blue {
+      background: rgba(37,99,235,.12);
+      color: #2563EB;
+    }
+    html.light-mode .badge-gray {
+      background: rgba(107,114,128,.12);
+      color: #4B5563;
+    }
+    html.light-mode .badge-orange {
+      background: rgba(232,80,10,.12);
+      color: #E8500A;
+    }
+    html.light-mode .alert-success {
+      background: rgba(22,163,74,.1);
+      border-color: #16A34A;
+      color: #15803D;
+    }
+    html.light-mode .alert-error {
+      background: rgba(220,38,38,.1);
+      border-color: #DC2626;
+      color: #991B1B;
+    }
+    html.light-mode .alert-warning {
+      background: rgba(217,119,6,.1);
+      border-color: #D97706;
+      color: #92400E;
+    }
+    html.light-mode .alert-info {
+      background: rgba(37,99,235,.1);
+      border-color: #2563EB;
+      color: #1E40AF;
+    }
+    html.light-mode th {
+      color: #4B5563;
+      border-bottom-color: #E5E7EB;
+    }
+    html.light-mode td {
+      border-bottom-color: rgba(209,213,219,.6);
+    }
+    html.light-mode tr:hover td {
+      background: rgba(0,0,0,.02);
+    }
+    html.light-mode .btn-secondary {
+      background: #F3F4F6;
+      color: #1F2937;
+      border-color: #D1D5DB;
+    }
+    html.light-mode .btn-secondary:hover {
+      border-color: #4B5563;
+      background: #FFFFFF;
+    }
   </style>
   {% block extra_css %}{% endblock %}
 </head>
@@ -467,6 +642,9 @@
   <header class="topbar">
     <div class="topbar-title">{% block page_title %}Uncle Kop's Workshop{% endblock %}</div>
     {% block topbar_actions %}{% endblock %}
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light mode">
+      <span id="themeIcon">🌙</span>
+    </button>
     <span class="topbar-user">{{ user.get_full_name|default:user.username }}</span>
   </header>
 
@@ -485,11 +663,66 @@
 
 {% else %}
 <!-- Login page layout -->
-<div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--dark);">
+<div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--dark); position:relative;">
+  <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light mode" style="position:absolute; top:20px; right:20px;">
+    <span id="themeIcon">🌙</span>
+  </button>
   {% block login_content %}{% endblock %}
 </div>
 {% endif %}
 
 {% block extra_js %}{% endblock %}
+
+<script>
+  // Theme switching functionality
+  function initTheme() {
+    const themeToggle = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const html = document.documentElement;
+
+    if (!themeToggle || !themeIcon) {
+      console.warn('Theme toggle elements not found');
+      return;
+    }
+
+    // Load saved theme preference
+    function loadTheme() {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      if (savedTheme === 'light') {
+        html.classList.add('light-mode');
+        themeIcon.textContent = '☀️';
+      } else {
+        html.classList.remove('light-mode');
+        themeIcon.textContent = '🌙';
+      }
+    }
+
+    // Toggle theme
+    function toggleTheme() {
+      if (html.classList.contains('light-mode')) {
+        html.classList.remove('light-mode');
+        localStorage.setItem('theme', 'dark');
+        themeIcon.textContent = '🌙';
+      } else {
+        html.classList.add('light-mode');
+        localStorage.setItem('theme', 'light');
+        themeIcon.textContent = '☀️';
+      }
+    }
+
+    // Event listener
+    themeToggle.addEventListener('click', toggleTheme);
+
+    // Load theme on page load
+    loadTheme();
+  }
+
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTheme);
+  } else {
+    initTheme();
+  }
+</script>
 </body>
 </html>
