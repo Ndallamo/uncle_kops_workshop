@@ -70,9 +70,7 @@ def employee_create(request):
     if request.method == 'POST':
         form = EmployeeForm(request.POST)
         if form.is_valid():
-            user = form.save(commit=False)
-            user.set_password(form.cleaned_data['password'])
-            user.save()
+            user = form.save()
             UserProfile.objects.create(user=user, role='mechanic')
             messages.success(request, f"Mechanic '{user.get_full_name()}' added.")
             return redirect('employee_list')
