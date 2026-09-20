@@ -26,5 +26,3 @@ def can_resend_verification(user, limit=3, period_seconds=3600):
     # increment
     cache.incr(key, delta=1) if cache.get(key) is not None else cache.set(key, 1, timeout=period_seconds)
     return True
-
-*** End Patch
