@@ -5,11 +5,19 @@ from django.contrib import messages
 from django.db.models import Count, Sum, Q
 from django.utils import timezone
 from datetime import date, timedelta
+from django.http import JsonResponse, HttpResponseBadRequest
+from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.csrf import csrf_exempt
+import json
+from django.contrib.auth import authenticate
+from django.core.cache import cache
 
 from .models import Customer, Vehicle, RepairOrder, LaborLine, PartsLine, Invoice, Appointment, Part, ServiceItem, UserProfile
 from .forms  import (CustomerForm, VehicleForm, RepairOrderForm, LaborLineForm,
                      PartsLineForm, InvoiceForm, AppointmentForm, PartForm, ServiceItemForm, UserRegistrationForm,
                      EmployeeForm, EmployeeEditForm)
+from .auth_utils import send_verification_email, can_resend_verification
+from .models import EmailVerificationToken
 
 
 # ─────────────────────────────────────────────
@@ -22,13 +30,15 @@ def register(request):
     if request.method == 'POST':
         form = UserRegistrationForm(request.POST)
         if form.is_valid():
+            # Create user but do NOT auto-login until email verified
             user = form.save(commit=False)
             role = form.cleaned_data.get('role')
             if role == 'admin':
                 user.is_staff = True
+            user.is_active = True
             user.save()
 
-            UserProfile.objects.create(user=user, role=role)
+            UserProfile.objects.create(user=user, role=role, is_verified=False)
 
             if role == 'customer':
                 Customer.objects.get_or_create(
@@ -42,12 +52,112 @@ def register(request):
                     }
                 )
 
-            login(request, user)
-            messages.success(request, 'Account created successfully.')
-            return redirect('dashboard')
+            # Send verification email
+            try:
+                send_verification_email(request, user, ttl_minutes=30)
+            except Exception:
+                messages.warning(request, 'Account created but failed to send verification email. Contact support.')
+                return redirect('login')
+
+            messages.success(request, 'Account created. Please check your email to verify your account.')
+            return redirect('login')
     else:
         form = UserRegistrationForm()
     return render(request, 'workshop/register.html', {'form': form})
+
+
+# --- API endpoints for registration and verification
+@csrf_exempt
+@require_POST
+def api_register(request):
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return HttpResponseBadRequest('Invalid JSON')
+
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+    first_name = data.get('first_name', '')
+    last_name = data.get('last_name', '')
+    role = data.get('role', 'customer')
+
+    if not username or not email or not password:
+        return JsonResponse({'error': 'username, email and password required'}, status=400)
+
+    if User.objects.filter(username=username).exists() or User.objects.filter(email=email).exists():
+        return JsonResponse({'error': 'user with username or email already exists'}, status=400)
+
+    user = User.objects.create_user(username=username, email=email, password=password, first_name=first_name, last_name=last_name)
+    if role == 'admin':
+        user.is_staff = True
+        user.save()
+    UserProfile.objects.create(user=user, role=role, is_verified=False)
+    if role == 'customer':
+        Customer.objects.get_or_create(email=user.email, defaults={'first_name': first_name, 'last_name': last_name})
+
+    try:
+        send_verification_email(request, user, ttl_minutes=30)
+    except Exception:
+        # still return created but warn
+        return JsonResponse({'status': 'created', 'warning': 'failed to send verification email'}, status=201)
+
+    return JsonResponse({'status': 'created', 'message': 'verification email sent'}, status=201)
+
+
+@require_GET
+def verify_email(request):
+    token = request.GET.get('token')
+    if not token:
+        return JsonResponse({'error': 'token required'}, status=400)
+
+    obj = EmailVerificationToken.validate_token(token)
+    if not obj:
+        return JsonResponse({'error': 'invalid or expired token'}, status=400)
+
+    user = obj.user
+    obj.used = True
+    obj.save()
+    profile = getattr(user, 'userprofile', None)
+    if profile:
+        profile.is_verified = True
+        profile.save()
+
+    # log the user in and return a session-based response
+    login(request, user)
+    return JsonResponse({'status': 'verified', 'message': 'account verified and logged in'})
+
+
+@csrf_exempt
+@require_POST
+def resend_verification(request):
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return HttpResponseBadRequest('Invalid JSON')
+
+    email = data.get('email')
+    if not email:
+        return JsonResponse({'error': 'email required'}, status=400)
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        # Do not reveal existence
+        return JsonResponse({'status': 'ok'})
+
+    profile = getattr(user, 'userprofile', None)
+    if profile and profile.is_verified:
+        return JsonResponse({'status': 'already_verified'})
+
+    if not can_resend_verification(user):
+        return JsonResponse({'error': 'rate limit exceeded'}, status=429)
+
+    try:
+        send_verification_email(request, user, ttl_minutes=30)
+    except Exception:
+        return JsonResponse({'error': 'failed to send email'}, status=500)
+
+    return JsonResponse({'status': 'ok', 'message': 'verification email sent'})
 
 
 # ─────────────────────────────────────────────

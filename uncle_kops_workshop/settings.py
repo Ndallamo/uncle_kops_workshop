@@ -2,6 +2,9 @@
 Django settings for Uncle Kop's Workshop
 """
 from pathlib import Path
+import pymysql
+
+pymysql.install_as_MySQLdb()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -10,6 +13,18 @@ SECRET_KEY = 'django-insecure-CHANGE-THIS-IN-PRODUCTION-uncle-kops-2024'
 DEBUG = True  # Set to False in production
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# Encryption key for AES-256-GCM (set from env in production). Base64-encoded 32 bytes.
+import os
+ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')  # set to a base64-encoded 32-byte key in prod
+
+# Use Argon2id for password hashing when available
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -53,9 +68,14 @@ WSGI_APPLICATION = 'uncle_kops_workshop.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'uncle_kops_db',
+        'USER': 'django_user',
+        'PASSWORD': 'UncleKops2024!',
+        'HOST': '10.30.24.143',
+        'PORT': '3306',
     }
+    
 }
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -64,6 +84,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
+
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE     = 'Africa/Johannesburg'
@@ -82,3 +103,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL          = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
+
+# Email settings (development). In production use an SMTP server and secure credentials.
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+
+# Security recommendations to enable in production
+# SECURE_SSL_REDIRECT = True
+# SESSION_COOKIE_SECURE = True
+# CSRF_COOKIE_SECURE = True
+# SECURE_HSTS_SECONDS = 31536000

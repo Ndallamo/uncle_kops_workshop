@@ -1,6 +1,12 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.conf import settings
+import base64
+import os
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import hashlib
+import secrets
 
 
 # ─────────────────────────────────────────────
@@ -10,10 +16,10 @@ class Customer(models.Model):
     first_name   = models.CharField(max_length=100)
     last_name    = models.CharField(max_length=100)
     email        = models.EmailField(unique=True)
-    phone        = models.CharField(max_length=20)
-    address      = models.TextField(blank=True)
+    phone        = EncryptedTextField(blank=True, null=True)
+    address      = EncryptedTextField(blank=True, null=True)
     created_at   = models.DateTimeField(auto_now_add=True)
-    notes        = models.TextField(blank=True)
+    notes        = EncryptedTextField(blank=True, null=True)
 
     class Meta:
         ordering = ['last_name', 'first_name']
@@ -24,6 +30,36 @@ class Customer(models.Model):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+
+# Email verification token model (store token hash, short TTL)
+class EmailVerificationToken(models.Model):
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='verification_tokens')
+    token_hash = models.CharField(max_length=128, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+
+    @classmethod
+    def generate_for_user(cls, user, ttl_minutes=30):
+        raw = secrets.token_urlsafe(32)
+        h = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+        expires = timezone.now() + timezone.timedelta(minutes=ttl_minutes)
+        obj = cls.objects.create(user=user, token_hash=h, expires_at=expires)
+        return raw, obj
+
+    @classmethod
+    def validate_token(cls, raw_token):
+        h = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+        try:
+            obj = cls.objects.get(token_hash=h)
+        except cls.DoesNotExist:
+            return None
+        if obj.used:
+            return None
+        if timezone.now() > obj.expires_at:
+            return None
+        return obj
 
 
 # ─────────────────────────────────────────────
@@ -38,6 +74,7 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField('auth.User', on_delete=models.CASCADE, related_name='userprofile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
+    is_verified = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user.username} ({self.role})"
@@ -59,6 +96,56 @@ class Vehicle(models.Model):
 
     def __str__(self):
         return f"{self.year} {self.make} {self.model} ({self.customer})"
+
+
+# EncryptedTextField: AES-256-GCM at-rest encryption for sensitive fields
+class EncryptedTextField(models.TextField):
+    description = "Text field that transparently encrypts/decrypts using AES-256-GCM"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _get_key(self):
+        key_b64 = getattr(settings, 'ENCRYPTION_KEY', '')
+        if not key_b64:
+            raise RuntimeError('ENCRYPTION_KEY is not configured in settings')
+        return base64.b64decode(key_b64)
+
+    def get_prep_value(self, value):
+        # encrypt before saving
+        if value is None:
+            return None
+        key = self._get_key()
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(12)
+        ct = aesgcm.encrypt(nonce, value.encode('utf-8'), None)
+        payload = nonce + ct
+        return base64.b64encode(payload).decode('utf-8')
+
+    def from_db_value(self, value, expression, connection):
+        if value is None:
+            return None
+        key = self._get_key()
+        aesgcm = AESGCM(key)
+        try:
+            data = base64.b64decode(value)
+            nonce = data[:12]
+            ct = data[12:]
+            pt = aesgcm.decrypt(nonce, ct, None)
+            return pt.decode('utf-8')
+        except Exception:
+            return value
+
+    def to_python(self, value):
+        # when accessed in Python, decrypt
+        if value is None:
+            return None
+        # if looks like base64 blob (saved), attempt to decrypt
+        try:
+            return self.from_db_value(value, None, None)
+        except Exception:
+            return value
+
 
 
 # ─────────────────────────────────────────────

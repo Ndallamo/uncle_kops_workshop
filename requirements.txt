@@ -1,2 +1,5 @@
 Django>=4.2,<5.0
 Pillow>=10.0
+mysqlclient>=2.2
+cryptography>=40.0
+argon2-cffi>=23.0
