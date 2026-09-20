@@ -72,7 +72,7 @@ DATABASES = {
         'NAME': 'uncle_kops_db',
         'USER': 'django_user',
         'PASSWORD': 'UncleKops2024!',
-        'HOST': '10.30.24.143',
+        'HOST': '192.168.14.179',
         'PORT': '3306',
     }
     

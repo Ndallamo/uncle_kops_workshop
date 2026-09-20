@@ -9,6 +9,55 @@ import hashlib
 import secrets
 
 
+# EncryptedTextField: AES-256-GCM at-rest encryption for sensitive fields
+class EncryptedTextField(models.TextField):
+    description = "Text field that transparently encrypts/decrypts using AES-256-GCM"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _get_key(self):
+        key_b64 = getattr(settings, 'ENCRYPTION_KEY', '')
+        if not key_b64:
+            raise RuntimeError('ENCRYPTION_KEY is not configured in settings')
+        return base64.b64decode(key_b64)
+
+    def get_prep_value(self, value):
+        # encrypt before saving
+        if value is None:
+            return None
+        key = self._get_key()
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(12)
+        ct = aesgcm.encrypt(nonce, value.encode('utf-8'), None)
+        payload = nonce + ct
+        return base64.b64encode(payload).decode('utf-8')
+
+    def from_db_value(self, value, expression, connection):
+        if value is None:
+            return None
+        key = self._get_key()
+        aesgcm = AESGCM(key)
+        try:
+            data = base64.b64decode(value)
+            nonce = data[:12]
+            ct = data[12:]
+            pt = aesgcm.decrypt(nonce, ct, None)
+            return pt.decode('utf-8')
+        except Exception:
+            return value
+
+    def to_python(self, value):
+        # when accessed in Python, decrypt
+        if value is None:
+            return None
+        # if looks like base64 blob (saved), attempt to decrypt
+        try:
+            return self.from_db_value(value, None, None)
+        except Exception:
+            return value
+
+
 # ─────────────────────────────────────────────
 #  CUSTOMER
 # ─────────────────────────────────────────────
@@ -96,55 +145,7 @@ class Vehicle(models.Model):
 
     def __str__(self):
         return f"{self.year} {self.make} {self.model} ({self.customer})"
-
-
-# EncryptedTextField: AES-256-GCM at-rest encryption for sensitive fields
-class EncryptedTextField(models.TextField):
-    description = "Text field that transparently encrypts/decrypts using AES-256-GCM"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def _get_key(self):
-        key_b64 = getattr(settings, 'ENCRYPTION_KEY', '')
-        if not key_b64:
-            raise RuntimeError('ENCRYPTION_KEY is not configured in settings')
-        return base64.b64decode(key_b64)
-
-    def get_prep_value(self, value):
-        # encrypt before saving
-        if value is None:
-            return None
-        key = self._get_key()
-        aesgcm = AESGCM(key)
-        nonce = os.urandom(12)
-        ct = aesgcm.encrypt(nonce, value.encode('utf-8'), None)
-        payload = nonce + ct
-        return base64.b64encode(payload).decode('utf-8')
-
-    def from_db_value(self, value, expression, connection):
-        if value is None:
-            return None
-        key = self._get_key()
-        aesgcm = AESGCM(key)
-        try:
-            data = base64.b64decode(value)
-            nonce = data[:12]
-            ct = data[12:]
-            pt = aesgcm.decrypt(nonce, ct, None)
-            return pt.decode('utf-8')
-        except Exception:
-            return value
-
-    def to_python(self, value):
-        # when accessed in Python, decrypt
-        if value is None:
-            return None
-        # if looks like base64 blob (saved), attempt to decrypt
-        try:
-            return self.from_db_value(value, None, None)
-        except Exception:
-            return value
+    
 
 
 
