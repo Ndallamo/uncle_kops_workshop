@@ -349,7 +349,23 @@
     .text-orange { color: var(--orange2); }
     .text-green  { color: var(--green); }
     .text-red    { color: var(--red); }
-    .fw-600 { font-weight: 600; }
+    .text-fw-600 { font-weight: 600; }
+
+    /* ── Login Page Styles ── */
+    .login-header {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 36px;
+      letter-spacing: 2px;
+      color: #fff;
+      line-height: 1;
+    }
+    .login-subheader {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-top: 8px;
+    }
 
     /* ── Theme Toggle Button ── */
     .theme-toggle {
@@ -508,6 +524,12 @@
     html.light-mode .btn-secondary:hover {
       border-color: #4B5563;
       background: #FFFFFF;
+    }
+    html.light-mode .login-header {
+      color: #000000;
+    }
+    html.light-mode .login-subheader {
+      color: #4B5563;
     }
   </style>
   {% block extra_css %}{% endblock %}

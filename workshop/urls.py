@@ -2,6 +2,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Auth API
+    path('api/auth/register',        views.api_register,            name='api_register'),
+    path('verify-email/',            views.verify_email,           name='verify_email'),
+    path('api/auth/resend-verification', views.resend_verification,  name='resend_verification'),
     # Dashboard
     path('',                        views.dashboard,              name='dashboard'),
 
