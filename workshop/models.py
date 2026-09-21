@@ -20,12 +20,23 @@ class EncryptedTextField(models.TextField):
         key_b64 = getattr(settings, 'ENCRYPTION_KEY', '')
         if not key_b64:
             raise RuntimeError('ENCRYPTION_KEY is not configured in settings')
-        return base64.b64decode(key_b64)
+
+        raw_key = key_b64.encode('utf-8')
+        try:
+            key = base64.b64decode(raw_key, altchars=b'-_')
+        except Exception:
+            key = base64.b64decode(raw_key)
+
+        if len(key) not in (16, 24, 32):
+            raise RuntimeError('ENCRYPTION_KEY must decode to a valid AES key length (16, 24, or 32 bytes)')
+        return key
 
     def get_prep_value(self, value):
         # encrypt before saving
         if value is None:
             return None
+        if not isinstance(value, str):
+            value = str(value)
         key = self._get_key()
         aesgcm = AESGCM(key)
         nonce = os.urandom(12)
@@ -36,10 +47,12 @@ class EncryptedTextField(models.TextField):
     def from_db_value(self, value, expression, connection):
         if value is None:
             return None
+        if isinstance(value, str) and value == '':
+            return ''
         key = self._get_key()
         aesgcm = AESGCM(key)
         try:
-            data = base64.b64decode(value)
+            data = base64.b64decode(value.encode('utf-8'), altchars=b'-_')
             nonce = data[:12]
             ct = data[12:]
             pt = aesgcm.decrypt(nonce, ct, None)
@@ -51,7 +64,8 @@ class EncryptedTextField(models.TextField):
         # when accessed in Python, decrypt
         if value is None:
             return None
-        # if looks like base64 blob (saved), attempt to decrypt
+        if isinstance(value, str) and value == '':
+            return ''
         try:
             return self.from_db_value(value, None, None)
         except Exception:

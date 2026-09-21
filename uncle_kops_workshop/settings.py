@@ -7,16 +7,20 @@ import pymysql
 pymysql.install_as_MySQLdb()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+import os
 
-SECRET_KEY = 'django-insecure-CHANGE-THIS-IN-PRODUCTION-uncle-kops-2024'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-CHANGE-THIS-IN-PRODUCTION-uncle-kops-2024')
 
 DEBUG = True  # Set to False in production
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.14.85']
 
 # Encryption key for AES-256-GCM (set from env in production). Base64-encoded 32 bytes.
-import os
-ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')  # set to a base64-encoded 32-byte key in prod
+# Keep this valid and URL-safe compatible; a Fernet key also works as a raw 32-byte AES key.
+ENCRYPTION_KEY = os.environ.get(
+    'ENCRYPTION_KEY',
+    'tr4zq2/5QiLU3TEFoum7fXl7MmqhfluFxbLxRgoQZ2M='
+)
 
 # Use Argon2id for password hashing when available
 PASSWORD_HASHERS = [
@@ -72,7 +76,7 @@ DATABASES = {
         'NAME': 'uncle_kops_db',
         'USER': 'django_user',
         'PASSWORD': 'UncleKops2024!',
-        'HOST': '192.168.14.179',
+        'HOST': '192.168.14.85',
         'PORT': '3306',
     }
     
@@ -104,9 +108,41 @@ LOGIN_URL          = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
 
-# Email settings (development). In production use an SMTP server and secure credentials.
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@localhost')
+# Email settings
+# Use real SMTP values only when they are actually configured. If no valid credentials are present,
+# Django will fall back to the console backend so emails are still visible in development without
+# causing false "email could not be sent" warnings.
+# Example Gmail values:
+#   EMAIL_HOST=smtp.gmail.com
+#   EMAIL_PORT=587
+#   EMAIL_USE_TLS=True
+#   EMAIL_HOST_USER=your-email@gmail.com
+#   EMAIL_HOST_PASSWORD=your-app-password
+#   DEFAULT_FROM_EMAIL=your-email@gmail.com
+# Example Outlook values:
+#   EMAIL_HOST=smtp.office365.com
+#   EMAIL_PORT=587
+#   EMAIL_USE_TLS=True
+#   EMAIL_HOST_USER=your-email@outlook.com
+#   EMAIL_HOST_PASSWORD=your-password-or-app-password
+#   DEFAULT_FROM_EMAIL=your-email@outlook.com
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@localhost')
+
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('1', 'true', 'yes', 'on')
+EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False').lower() in ('1', 'true', 'yes', 'on')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
+SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
+
+if os.environ.get('EMAIL_BACKEND'):
+    EMAIL_BACKEND = os.environ['EMAIL_BACKEND']
+elif EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and not EMAIL_HOST_USER.startswith('your-'):
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 # Security recommendations to enable in production
 # SECURE_SSL_REDIRECT = True

@@ -16,7 +16,7 @@ from .models import Customer, Vehicle, RepairOrder, LaborLine, PartsLine, Invoic
 from .forms  import (CustomerForm, VehicleForm, RepairOrderForm, LaborLineForm,
                      PartsLineForm, InvoiceForm, AppointmentForm, PartForm, ServiceItemForm, UserRegistrationForm,
                      EmployeeForm, EmployeeEditForm)
-from .auth_utils import send_verification_email, can_resend_verification
+from .auth_utils import send_verification_email, can_resend_verification, send_service_request_confirmation
 from .models import EmailVerificationToken
 
 
@@ -668,8 +668,9 @@ def appointment_create(request):
                     appt.vehicle = vehicle
         appt.save()
 
+        repair_order = None
         if appt.vehicle_id:
-            RepairOrder.objects.create(
+            repair_order = RepairOrder.objects.create(
                 vehicle=appt.vehicle,
                 assigned_tech=None,
                 status='pending',
@@ -678,6 +679,16 @@ def appointment_create(request):
                 mileage_in=appt.vehicle.mileage or 0,
                 approved=False,
             )
+
+        try:
+            send_service_request_confirmation(
+                request.user.email,
+                request.user.get_full_name() or request.user.username,
+                appt,
+                repair_order,
+            )
+        except Exception:
+            messages.warning(request, 'Service request saved, but the confirmation email could not be sent.')
 
         request.session['new_service_request'] = True
         messages.success(request, 'Service request submitted. A mechanic will review it and update your vehicle status soon.')
