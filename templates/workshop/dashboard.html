@@ -84,11 +84,7 @@
             <td>{{ appt.customer.full_name }}</td>
             <td>{{ appt.vehicle.make }} {{ appt.vehicle.model }}</td>
             <td>
-              {% if appt.confirmed %}
-                <span class="badge badge-green">Confirmed</span>
-              {% else %}
-                <span class="badge badge-yellow">Pending</span>
-              {% endif %}
+              <span class="badge badge-muted">Scheduled</span>
             </td>
           </tr>
           {% empty %}

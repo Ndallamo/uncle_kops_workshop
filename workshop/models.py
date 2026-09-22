@@ -111,6 +111,36 @@ class EmailVerificationToken(models.Model):
         return obj
 
 
+# Password reset tokens (store token hash, short TTL)
+class PasswordResetToken(models.Model):
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='password_reset_tokens')
+    token_hash = models.CharField(max_length=128, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+
+    @classmethod
+    def generate_for_user(cls, user, ttl_minutes=30):
+        raw = secrets.token_urlsafe(32)
+        h = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+        expires = timezone.now() + timezone.timedelta(minutes=ttl_minutes)
+        obj = cls.objects.create(user=user, token_hash=h, expires_at=expires)
+        return raw, obj
+
+    @classmethod
+    def validate_token(cls, raw_token):
+        h = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+        try:
+            obj = cls.objects.get(token_hash=h)
+        except cls.DoesNotExist:
+            return None
+        if obj.used:
+            return None
+        if timezone.now() > obj.expires_at:
+            return None
+        return obj
+
+
 # ─────────────────────────────────────────────
 #  USER PROFILE
 # ─────────────────────────────────────────────
@@ -141,6 +171,9 @@ class Vehicle(models.Model):
     license_plate = models.CharField(max_length=20, blank=True)
     color       = models.CharField(max_length=30, blank=True)
     mileage     = models.PositiveIntegerField(default=0)
+    # Service metadata
+    service_plan = models.CharField(max_length=200, blank=True)
+    recent_service_history = models.TextField(blank=True)
     notes       = models.TextField(blank=True)
 
     def __str__(self):

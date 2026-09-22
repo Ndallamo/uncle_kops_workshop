@@ -16,7 +16,29 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # Encryption key for AES-256-GCM (set from env in production). Base64-encoded 32 bytes.
 import os
-ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')  # set to a base64-encoded 32-byte key in prod
+import base64
+import secrets
+
+# ENCRYPTION_KEY should be a base64-encoded 32-byte key (AES-256). In production
+# set the `ENCRYPTION_KEY` environment variable. For local development when
+# `DEBUG=True`, persist a generated key to `.dev_encryption_key` so encrypted
+# data remains readable across server restarts.
+ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY')
+if not ENCRYPTION_KEY:
+    if DEBUG:
+        key_file = BASE_DIR / '.dev_encryption_key'
+        try:
+            if key_file.exists():
+                ENCRYPTION_KEY = key_file.read_text().strip()
+            else:
+                k = base64.b64encode(secrets.token_bytes(32)).decode('utf-8')
+                key_file.write_text(k)
+                ENCRYPTION_KEY = k
+        except Exception:
+            # Fallback to empty string if filesystem not writable; models will raise clearly.
+            ENCRYPTION_KEY = ''
+    else:
+        ENCRYPTION_KEY = ''  # production requires explicit env var
 
 # Use Argon2id for password hashing when available
 PASSWORD_HASHERS = [
@@ -72,7 +94,7 @@ DATABASES = {
         'NAME': 'uncle_kops_db',
         'USER': 'django_user',
         'PASSWORD': 'UncleKops2024!',
-        'HOST': '192.168.14.179',
+        'HOST': '192.168.14.159',
         'PORT': '3306',
     }
     
