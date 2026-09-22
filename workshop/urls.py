@@ -6,6 +6,8 @@ urlpatterns = [
     path('api/auth/register',        views.api_register,            name='api_register'),
     path('verify-email/',            views.verify_email,           name='verify_email'),
     path('api/auth/resend-verification', views.resend_verification,  name='resend_verification'),
+    path('forgot-password/',           views.forgot_password,        name='forgot_password'),
+    path('reset-password/',            views.reset_password,         name='reset_password'),
     # Dashboard
     path('',                        views.dashboard,              name='dashboard'),
 

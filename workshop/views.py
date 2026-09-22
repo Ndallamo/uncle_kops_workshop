@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth import login
+from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Count, Sum, Q
@@ -17,6 +18,7 @@ from .forms  import (CustomerForm, VehicleForm, RepairOrderForm, LaborLineForm,
                      PartsLineForm, InvoiceForm, AppointmentForm, PartForm, ServiceItemForm, UserRegistrationForm,
                      EmployeeForm, EmployeeEditForm)
 from .auth_utils import send_verification_email, can_resend_verification
+from .auth_utils import send_password_reset_email
 from .models import EmailVerificationToken
 
 
@@ -64,6 +66,61 @@ def register(request):
     else:
         form = UserRegistrationForm()
     return render(request, 'workshop/register.html', {'form': form})
+
+
+def forgot_password(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        if not email:
+            messages.error(request, 'Please provide your email address.')
+            return redirect('forgot_password')
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # do not reveal whether a user exists
+            messages.success(request, 'If an account with that email exists, a reset link has been sent.')
+            return redirect('login')
+
+        try:
+            send_password_reset_email(request, user, ttl_minutes=30)
+            messages.success(request, 'If an account with that email exists, a reset link has been sent.')
+        except Exception:
+            messages.error(request, 'Failed to send reset email. Contact support.')
+        return redirect('login')
+
+    return render(request, 'workshop/forgot_password.html')
+
+
+def reset_password(request):
+    token = request.GET.get('token') if request.method == 'GET' else request.POST.get('token')
+    if request.method == 'GET':
+        if not token:
+            messages.error(request, 'Invalid password reset link.')
+            return redirect('login')
+        return render(request, 'workshop/reset_password.html', {'token': token})
+
+    # POST — perform reset
+    new_password = request.POST.get('password')
+    confirm = request.POST.get('password_confirm')
+    if not new_password or new_password != confirm:
+        messages.error(request, 'Passwords do not match.')
+        return render(request, 'workshop/reset_password.html', {'token': token})
+
+    from .models import PasswordResetToken
+    obj = PasswordResetToken.validate_token(token)
+    if not obj:
+        messages.error(request, 'Invalid or expired token.')
+        return redirect('login')
+
+    user = obj.user
+    # set new password and mark token used
+    user.set_password(new_password)
+    user.save()
+    obj.used = True
+    obj.save()
+
+    messages.success(request, 'Your password has been reset. You can now log in.')
+    return redirect('login')
 
 
 # --- API endpoints for registration and verification
@@ -653,17 +710,20 @@ def appointment_create(request):
             appt.customer = customer
             vehicle_id = request.POST.get('vehicle')
             if not vehicle_id:
-                vehicle_text = form.cleaned_data.get('vehicle_text')
-                if vehicle_text and customer:
+                manual_vehicle = form.manual_vehicle_data()
+                if any(value not in (None, '', 0) for value in manual_vehicle.values()) and customer:
                     vehicle = Vehicle.objects.create(
                         customer=customer,
-                        make=vehicle_text,
-                        model='',
-                        year=0,
-                        vin='',
-                        license_plate='',
-                        color='',
-                        mileage=0,
+                        make=manual_vehicle['make'] or 'Unknown',
+                        model=manual_vehicle['model'] or '',
+                        year=manual_vehicle['year'] or 0,
+                        vin=manual_vehicle['vin'] or '',
+                        license_plate=manual_vehicle['license_plate'] or '',
+                        color=manual_vehicle['color'] or '',
+                        mileage=manual_vehicle['mileage'] or 0,
+                        service_plan=manual_vehicle['service_plan'] or '',
+                        recent_service_history=manual_vehicle['recent_service_history'] or '',
+                        notes=manual_vehicle['notes'] or '',
                     )
                     appt.vehicle = vehicle
         appt.save()

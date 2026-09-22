@@ -15,7 +15,7 @@
           {% if field.is_hidden %}
             {{ field }}
           {% else %}
-            <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">
+            <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'vehicle_text' or field.html_name == 'date_time' or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">
               <label for="{{ field.id_for_label }}">{{ field.label }}</label>
               {{ field }}
               {% if field.errors %}

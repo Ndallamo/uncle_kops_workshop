@@ -5,6 +5,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.core.cache import cache
 from .models import EmailVerificationToken
+from .models import PasswordResetToken
 
 
 def send_verification_email(request, user, ttl_minutes=30):
@@ -26,3 +27,14 @@ def can_resend_verification(user, limit=3, period_seconds=3600):
     # increment
     cache.incr(key, delta=1) if cache.get(key) is not None else cache.set(key, 1, timeout=period_seconds)
     return True
+
+
+def send_password_reset_email(request, user, ttl_minutes=30):
+    raw_token, token_obj = PasswordResetToken.generate_for_user(user, ttl_minutes=ttl_minutes)
+    host = request.get_host()
+    scheme = 'https' if request.is_secure() else 'http'
+    reset_url = f"{scheme}://{host}/reset-password/?token={raw_token}"
+    subject = 'Password reset request'
+    message = f"A password reset was requested for your account. Use the link below to reset your password (valid for {ttl_minutes} minutes):\n\n{reset_url}\n\nIf you did not request this, ignore this message."
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+    return token_obj
