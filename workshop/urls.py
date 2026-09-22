@@ -43,6 +43,7 @@ urlpatterns = [
     path('appointments/',           views.appointment_list,       name='appointment_list'),
     path('appointments/new/',       views.appointment_create,     name='appointment_create'),
     path('appointments/<int:pk>/edit/', views.appointment_edit,   name='appointment_edit'),
+    path('appointments/<int:pk>/<str:action>/', views.appointment_decision, name='appointment_decision'),
 
     # Parts Inventory
     path('parts/',                  views.parts_list,             name='parts_list'),

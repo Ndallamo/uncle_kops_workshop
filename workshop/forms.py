@@ -59,14 +59,58 @@ class PartsLineForm(forms.ModelForm):
 
 
 class InvoiceForm(forms.ModelForm):
+    repair_order = forms.ModelChoiceField(
+        queryset=RepairOrder.objects.all(),
+        empty_label='Choose repair/vehicle',
+        label='Repair order',
+    )
+    service_amount = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=0,
+        label='Service amount',
+    )
+    payment_method = forms.ChoiceField(
+        choices=[('', 'Choose method')] + list(Invoice.METHOD_CHOICES),
+        required=False,
+        label='Payment method',
+    )
+
     class Meta:
         model  = Invoice
-        fields = ['repair_order', 'issue_date', 'due_date', 'payment_status', 'payment_method', 'discount', 'tax_rate', 'notes']
+        fields = ['repair_order', 'service_amount', 'issue_date', 'due_date', 'payment_status', 'payment_method', 'discount', 'tax_rate', 'notes']
         widgets = {
             'issue_date': forms.DateInput(attrs={'type': 'date'}),
             'due_date':   forms.DateInput(attrs={'type': 'date'}),
             'notes':      forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.instance.pk and self.initial.get('repair_order'):
+            repair_order = self.initial['repair_order']
+            if hasattr(repair_order, 'grand_total'):
+                self.fields['service_amount'].initial = repair_order.grand_total
+        self.fields['discount'].min_value = 0
+        self.fields['tax_rate'].min_value = 0
+
+    def clean_service_amount(self):
+        value = self.cleaned_data.get('service_amount')
+        if value is None:
+            return value
+        return max(value, 0)
+
+    def clean_discount(self):
+        value = self.cleaned_data.get('discount')
+        if value is None:
+            return value
+        return max(value, 0)
+
+    def clean_tax_rate(self):
+        value = self.cleaned_data.get('tax_rate')
+        if value is None:
+            return value
+        return max(value, 0)
 
 
 class AppointmentForm(forms.ModelForm):
@@ -94,6 +138,18 @@ class AppointmentForm(forms.ModelForm):
         label='Vehicle notes',
         widget=forms.Textarea(attrs={'rows': 3})
     )
+    assigned_mechanic = forms.ModelChoiceField(
+        queryset=User.objects.filter(userprofile__role='mechanic'),
+        required=False,
+        label='Assigned mechanic',
+        empty_label='--- No mechanic assigned ---'
+    )
+    assignment_status = forms.ChoiceField(
+        choices=Appointment.ASSIGNMENT_CHOICES,
+        required=False,
+        label='Assignment status',
+        initial='pending'
+    )
 
     class Meta:
         model  = Appointment
@@ -102,7 +158,7 @@ class AppointmentForm(forms.ModelForm):
             'customer', 'vehicle', 'vehicle_text',
             'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_vin', 'vehicle_license_plate',
             'vehicle_color', 'vehicle_mileage', 'vehicle_service_plan', 'vehicle_recent_service_history',
-            'vehicle_notes', 'date_time', 'service_desc', 'notes'
+            'vehicle_notes', 'date_time', 'service_desc', 'assigned_mechanic', 'assignment_status', 'notes'
         ]
         widgets = {
             'date_time':                    forms.DateTimeInput(attrs={'type': 'datetime-local'}),
@@ -127,6 +183,10 @@ class AppointmentForm(forms.ModelForm):
                 self.fields['vehicle'].help_text = 'Customers can type vehicle details instead of selecting a saved vehicle.'
                 self.fields['vehicle_text'].widget = forms.HiddenInput()
                 self.fields['vehicle_text'].required = False
+                self.fields['assigned_mechanic'].widget = forms.HiddenInput()
+                self.fields['assigned_mechanic'].required = False
+                self.fields['assignment_status'].widget = forms.HiddenInput()
+                self.fields['assignment_status'].required = False
             else:
                 for field_name in [
                     'vehicle_text', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_vin',
