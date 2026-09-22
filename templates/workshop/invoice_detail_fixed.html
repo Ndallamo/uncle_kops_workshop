@@ -65,7 +65,7 @@
         {% if invoice.discount %}
         <div class="flex justify-between mb-3">
           <span class="text-muted">Discount</span>
-          <span class="fw-600">-R {{ invoice.discount }}</span>
+          <span class="fw-600">R {{ invoice.discount }}</span>
         </div>
         {% endif %}
       </div>
@@ -85,13 +85,13 @@
       <div class="card-title">Invoice Summary</div>
       <div style="display:flex; flex-direction:column; gap:12px;">
         <div class="flex justify-between">
-          <span class="text-muted">Subtotal</span>
-          <span class="fw-600">R {{ invoice.repair_order.grand_total }}</span>
+          <span class="text-muted">Service amount</span>
+          <span class="fw-600">R {{ invoice.service_amount }}</span>
         </div>
         {% if invoice.discount %}
         <div class="flex justify-between">
           <span class="text-muted">Discount</span>
-          <span class="fw-600">-R {{ invoice.discount }}</span>
+          <span class="fw-600">R {{ invoice.discount }}</span>
         </div>
         {% endif %}
         <div class="flex justify-between">

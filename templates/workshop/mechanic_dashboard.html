@@ -66,6 +66,37 @@
 </div>
 {% endif %}
 
+<div class="card mb-6">
+  <div class="card-title">Assignment requests</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Customer</th><th>Vehicle</th><th>Appointment</th><th>Status</th><th>Decision</th></tr>
+      </thead>
+      <tbody>
+        {% for appt in my_assignments %}
+        <tr>
+          <td>{{ appt.customer.full_name }}</td>
+          <td>{{ appt.vehicle.year }} {{ appt.vehicle.make }} {{ appt.vehicle.model }}</td>
+          <td>{{ appt.date_time|date:"d M Y, H:i" }}</td>
+          <td>{{ appt.get_assignment_status_display }}</td>
+          <td>
+            {% if appt.assignment_status == 'pending' %}
+              <a href="{% url 'appointment_decision' appt.pk 'accept' %}" class="btn btn-primary btn-sm">Accept</a>
+              <a href="{% url 'appointment_decision' appt.pk 'decline' %}" class="btn btn-danger btn-sm">Decline</a>
+            {% else %}
+              <span class="text-muted">{{ appt.get_assignment_status_display }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">No assignment requests yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-title">Assigned repair orders</div>
   <div class="table-wrap">

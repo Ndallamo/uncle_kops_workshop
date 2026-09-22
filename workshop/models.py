@@ -313,6 +313,7 @@ class Invoice(models.Model):
     ]
 
     repair_order    = models.OneToOneField(RepairOrder, on_delete=models.PROTECT, related_name='invoice')
+    service_amount  = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     issue_date      = models.DateField(default=timezone.now)
     due_date        = models.DateField()
     payment_status  = models.CharField(max_length=10, choices=PAYMENT_CHOICES, default='unpaid')
@@ -326,11 +327,11 @@ class Invoice(models.Model):
 
     @property
     def subtotal(self):
-        return self.repair_order.grand_total - self.discount
+        return max(self.service_amount - self.discount, 0)
 
     @property
     def tax_amount(self):
-        return self.subtotal * (self.tax_rate / 100)
+        return self.subtotal * (max(self.tax_rate, 0) / 100)
 
     @property
     def total_due(self):
@@ -341,12 +342,20 @@ class Invoice(models.Model):
 #  APPOINTMENT / BOOKING
 # ─────────────────────────────────────────────
 class Appointment(models.Model):
+    ASSIGNMENT_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('declined', 'Declined'),
+    ]
+
     customer    = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='appointments')
     vehicle     = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='appointments')
     date_time   = models.DateTimeField()
     duration    = models.PositiveIntegerField(default=60, help_text="Duration in minutes")
     service_desc = models.TextField()
     confirmed   = models.BooleanField(default=False)
+    assigned_mechanic = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_appointments')
+    assignment_status = models.CharField(max_length=20, choices=ASSIGNMENT_CHOICES, default='pending')
     notes       = models.TextField(blank=True)
 
     class Meta:

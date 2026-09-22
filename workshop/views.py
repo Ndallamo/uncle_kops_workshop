@@ -278,7 +278,7 @@ def dashboard(request):
         pending_approval = []
         notifications = []
         if customer:
-            repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).order_by('-date_created')
+            repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).exclude(status='cancelled').order_by('-date_created')
             pending_approval = repair_orders.filter(approved=False).order_by('-date_created')
 
             for order in repair_orders[:3]:
@@ -307,13 +307,15 @@ def dashboard(request):
         })
 
     if role == 'mechanic':
-        assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(assigned_tech=request.user).order_by('-date_created')
+        assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(assigned_tech=request.user).exclude(status='cancelled').order_by('-date_created')
         active_orders = assigned_orders.exclude(status='completed')[:8]
-        pending_orders = RepairOrder.objects.select_related('vehicle__customer').filter(status='pending', assigned_tech__isnull=True).order_by('-date_created')[:8]
+        pending_orders = RepairOrder.objects.select_related('vehicle__customer').filter(status='pending', assigned_tech__isnull=True).exclude(status='cancelled').order_by('-date_created')[:8]
+        my_assignments = Appointment.objects.select_related('customer', 'vehicle').filter(assigned_mechanic=request.user).order_by('date_time')
         return render(request, 'workshop/mechanic_dashboard.html', {
             'assigned_orders': assigned_orders,
             'active_orders': active_orders,
             'pending_orders': pending_orders,
+            'my_assignments': my_assignments,
         })
 
     if role == 'admin':
@@ -440,7 +442,7 @@ def vehicle_list(request):
 @login_required
 def vehicle_detail(request, pk):
     vehicle = get_object_or_404(Vehicle, pk=pk)
-    repair_orders = vehicle.repair_orders.order_by('-date_created')
+    repair_orders = vehicle.repair_orders.exclude(status='cancelled').order_by('-date_created')
     return render(request, 'workshop/vehicle_detail.html', {'vehicle': vehicle, 'repair_orders': repair_orders})
 
 
@@ -493,8 +495,12 @@ def repair_order_list(request):
             orders = orders.filter(vehicle__customer=customer)
         else:
             orders = orders.none()
+
     if status:
         orders = orders.filter(status=status)
+    else:
+        orders = orders.exclude(status='cancelled')
+
     return render(request, 'workshop/repair_order_list.html', {
         'orders': orders,
         'status': status,
@@ -627,7 +633,17 @@ def invoice_create(request):
         messages.error(request, 'Customers may not create invoices.')
         return redirect('invoice_list')
 
-    form = InvoiceForm(request.POST or None)
+    repair_order_id = request.GET.get('ro')
+    repair_order = None
+    if repair_order_id:
+        repair_order = get_object_or_404(RepairOrder, pk=repair_order_id)
+
+    initial = {}
+    if repair_order:
+        initial['repair_order'] = repair_order.pk
+        initial['service_amount'] = repair_order.grand_total
+
+    form = InvoiceForm(request.POST or None, initial=initial)
     if form.is_valid():
         invoice = form.save()
         messages.success(request, f"Invoice #{invoice.pk} created.")
@@ -664,14 +680,61 @@ def invoice_pay(request, pk):
         messages.error(request, 'Access denied.')
         return redirect('dashboard')
 
+    valid_methods = {key for key, _ in Invoice.METHOD_CHOICES}
     if request.method == 'POST':
+        payment_method = request.POST.get('payment_method', '').strip()
+        if payment_method not in valid_methods:
+            messages.error(request, 'Please choose a valid payment method.')
+            return render(request, 'workshop/invoice_payment.html', {'invoice': invoice})
+
         invoice.payment_status = 'paid'
-        invoice.payment_method = request.POST.get('payment_method', invoice.payment_method or 'card')
+        invoice.payment_method = payment_method
         invoice.save()
         messages.success(request, f'Invoice #{invoice.pk} marked as paid. Thank you for your payment.')
         return redirect('invoice_detail', pk=pk)
 
     return render(request, 'workshop/invoice_payment.html', {'invoice': invoice})
+
+
+def get_or_update_vehicle_repair_order(vehicle, *, assigned_tech=None, status=None, description=None, internal_notes=None, approved=None):
+    existing = RepairOrder.objects.filter(vehicle=vehicle).exclude(status__in=['completed', 'cancelled']).order_by('-date_created').first()
+    if existing:
+        changed = False
+
+        if assigned_tech is not None and existing.assigned_tech_id != assigned_tech.pk:
+            existing.assigned_tech = assigned_tech
+            changed = True
+        if status and existing.status != status:
+            existing.status = status
+            changed = True
+        if description and existing.description != description:
+            existing.description = description
+            changed = True
+        if internal_notes:
+            if existing.internal_notes:
+                combined = existing.internal_notes + "\n" + internal_notes
+            else:
+                combined = internal_notes
+            if existing.internal_notes != combined:
+                existing.internal_notes = combined
+                changed = True
+        if approved is not None and existing.approved != approved:
+            existing.approved = approved
+            changed = True
+
+        if changed:
+            existing.save()
+        return existing
+
+    return RepairOrder.objects.create(
+        vehicle=vehicle,
+        assigned_tech=assigned_tech,
+        status=status or 'pending',
+        description=description or 'New service request',
+        internal_notes=internal_notes or '',
+        mileage_in=vehicle.mileage or 0,
+        approved=bool(approved),
+    )
 
 
 # ─────────────────────────────────────────────
@@ -729,13 +792,11 @@ def appointment_create(request):
         appt.save()
 
         if appt.vehicle_id:
-            RepairOrder.objects.create(
-                vehicle=appt.vehicle,
-                assigned_tech=None,
+            get_or_update_vehicle_repair_order(
+                appt.vehicle,
                 status='pending',
                 description=appt.service_desc or 'New service request',
                 internal_notes=f"Service request booked for appointment {appt.date_time:%Y-%m-%d %H:%M}",
-                mileage_in=appt.vehicle.mileage or 0,
                 approved=False,
             )
 
@@ -748,12 +809,78 @@ def appointment_create(request):
 @login_required
 def appointment_edit(request, pk):
     appt = get_object_or_404(Appointment, pk=pk)
+    profile = getattr(request.user, 'userprofile', None)
+    role = profile.role if profile else ('admin' if request.user.is_staff else '')
+    if role != 'admin' and request.user != appt.assigned_mechanic:
+        messages.error(request, 'Only the admin or the assigned mechanic can edit this appointment.')
+        return redirect('appointment_list')
+
     form = AppointmentForm(request.POST or None, instance=appt, user=request.user)
     if form.is_valid():
-        form.save()
+        updated_appt = form.save(commit=False)
+        updated_appt.assigned_mechanic = form.cleaned_data.get('assigned_mechanic')
+        updated_appt.assignment_status = form.cleaned_data.get('assignment_status') or 'pending'
+        updated_appt.save()
+
+        if updated_appt.assigned_mechanic and updated_appt.assignment_status == 'accepted':
+            get_or_update_vehicle_repair_order(
+                updated_appt.vehicle,
+                assigned_tech=updated_appt.assigned_mechanic,
+                status='in_progress',
+                description=updated_appt.service_desc or 'Workshop appointment accepted',
+                internal_notes=f"Mechanic assignment accepted for appointment {updated_appt.date_time:%Y-%m-%d %H:%M}",
+                approved=False,
+            )
+        elif updated_appt.assigned_mechanic and updated_appt.assignment_status == 'declined':
+            get_or_update_vehicle_repair_order(
+                updated_appt.vehicle,
+                assigned_tech=None,
+                status='pending',
+                internal_notes=f"Mechanic assignment declined for appointment {updated_appt.date_time:%Y-%m-%d %H:%M}",
+                approved=False,
+            )
+
         messages.success(request, "Appointment updated.")
         return redirect('appointment_list')
     return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
+
+
+@login_required
+def appointment_decision(request, pk, action):
+    if action not in ['accept', 'decline']:
+        messages.error(request, 'Invalid assignment decision.')
+        return redirect('appointment_list')
+
+    appt = get_object_or_404(Appointment, pk=pk)
+    profile = getattr(request.user, 'userprofile', None)
+    if not profile or profile.role != 'mechanic' or appt.assigned_mechanic_id != request.user.pk:
+        messages.error(request, 'You are not assigned to this appointment.')
+        return redirect('appointment_list')
+
+    appt.assignment_status = 'accepted' if action == 'accept' else 'declined'
+    appt.save(update_fields=['assignment_status'])
+
+    if action == 'accept':
+        get_or_update_vehicle_repair_order(
+            appt.vehicle,
+            assigned_tech=request.user,
+            status='in_progress',
+            description=appt.service_desc or 'Workshop appointment accepted',
+            internal_notes=f"Mechanic {request.user.get_full_name() or request.user.username} accepted the assignment.",
+            approved=False,
+        )
+        messages.success(request, 'You accepted the service assignment.')
+    else:
+        get_or_update_vehicle_repair_order(
+            appt.vehicle,
+            assigned_tech=None,
+            status='pending',
+            internal_notes=f"Mechanic {request.user.get_full_name() or request.user.username} declined the assignment.",
+            approved=False,
+        )
+        messages.warning(request, 'You declined the service assignment.')
+
+    return redirect('dashboard')
 
 
 # ─────────────────────────────────────────────
