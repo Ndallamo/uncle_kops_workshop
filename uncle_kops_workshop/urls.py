@@ -12,7 +12,7 @@ urlpatterns = [
     path('login/admin', RedirectView.as_view(url='/admin/', permanent=False)),
 
     # Auth
-    path('login/',  auth_views.LoginView.as_view(template_name='workshop/login.html'),  name='login'),
+    path('login/',  workshop_views.login_view, name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('register/', workshop_views.register, name='register'),
 
