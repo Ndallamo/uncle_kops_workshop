@@ -1,0 +1,18 @@
+{% extends "workshop/base.html" %}
+{% block title %}Email Verification{% endblock %}
+
+{% block login_content %}
+<div style="width:100%; max-width:480px;">
+  <div class="card">
+    <div class="card-title">{% if success %}Email Verified{% else %}Verification Link{% endif %}</div>
+    <p style="margin-top:16px;">{{ message }}</p>
+    <div style="margin-top:24px;">
+      {% if success %}
+        <a href="{% url 'dashboard' %}" class="btn btn-primary">Open dashboard</a>
+      {% else %}
+        <a href="{% url 'login' %}" class="btn btn-secondary">Back to login</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
