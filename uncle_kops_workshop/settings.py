@@ -1,26 +1,58 @@
 """
 Django settings for Uncle Kop's Workshop
 """
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 import pymysql
 
 pymysql.install_as_MySQLdb()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-import os
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / '.env')
+
+
+# Load local development settings consistently across terminals without committing secrets.
+ENV_FILE = BASE_DIR / '.env'
+if ENV_FILE.exists():
+    for line in ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            key, value = line.split('=', 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"\''))
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-CHANGE-THIS-IN-PRODUCTION-uncle-kops-2024')
 
 DEBUG = True  # Set to False in production
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.14.85']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.15.68']
 
 # Encryption key for AES-256-GCM (set from env in production). Base64-encoded 32 bytes.
-# Keep this valid and URL-safe compatible; a Fernet key also works as a raw 32-byte AES key.
-ENCRYPTION_KEY = os.environ.get(
-    'ENCRYPTION_KEY',
-    'tr4zq2/5QiLU3TEFoum7fXl7MmqhfluFxbLxRgoQZ2M='
-)
+import base64
+import secrets
+
+# ENCRYPTION_KEY should be a base64-encoded 32-byte key (AES-256). In production
+# set the `ENCRYPTION_KEY` environment variable. For local development when
+# `DEBUG=True`, persist a generated key to `.dev_encryption_key` so encrypted
+# data remains readable across server restarts.
+ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY')
+if not ENCRYPTION_KEY:
+    if DEBUG:
+        key_file = BASE_DIR / '.dev_encryption_key'
+        try:
+            if key_file.exists():
+                ENCRYPTION_KEY = key_file.read_text().strip()
+            else:
+                k = base64.b64encode(secrets.token_bytes(32)).decode('utf-8')
+                key_file.write_text(k)
+                ENCRYPTION_KEY = k
+        except Exception:
+            # Fallback to empty string if filesystem not writable; models will raise clearly.
+            ENCRYPTION_KEY = ''
+    else:
+        ENCRYPTION_KEY = ''  # production requires explicit env var
 
 # Use Argon2id for password hashing when available
 PASSWORD_HASHERS = [
@@ -76,7 +108,7 @@ DATABASES = {
         'NAME': 'uncle_kops_db',
         'USER': 'django_user',
         'PASSWORD': 'UncleKops2024!',
-        'HOST': '192.168.14.85',
+        'HOST': '192.168.15.68',
         'PORT': '3306',
     }
     
@@ -134,7 +166,7 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('1', 'true',
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False').lower() in ('1', 'true', 'yes', 'on')
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
-EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '30'))
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '3'))
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
 
 if os.environ.get('EMAIL_BACKEND'):
