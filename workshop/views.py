@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required
 
 from django.contrib import messages
 
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Sum, Q, F
 
 from django.utils import timezone
 
@@ -521,8 +521,74 @@ def employee_edit(request, pk):
 
 
 # ─────────────────────────────────────────────
-#  DASHBOARD
+#  REPORTS
 # ─────────────────────────────────────────────
+@login_required
+def report(request):
+    profile = getattr(request.user, 'userprofile', None)
+    role = profile.role if profile else ('admin' if request.user.is_staff else '')
+
+    if role != 'admin':
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard')
+
+    total_customers = Customer.objects.count()
+    open_repair_orders = RepairOrder.objects.exclude(status__in=['completed', 'cancelled']).count()
+    completed_repairs = RepairOrder.objects.filter(status='completed').count()
+    pending_approval = RepairOrder.objects.filter(approved=False).count()
+    total_revenue = Invoice.objects.filter(payment_status='paid').aggregate(total=Sum('service_amount'))['total'] or 0
+    paid_invoices = Invoice.objects.filter(payment_status='paid').count()
+    unpaid_invoices = Invoice.objects.filter(payment_status='unpaid').count()
+    average_invoice = 0
+    if paid_invoices:
+        average_invoice = total_revenue / paid_invoices
+
+    monthly_revenue = []
+    for offset in range(6):
+        month_index = (date.today().month - 1 - offset) % 12
+        year = date.today().year + ((date.today().month - 1 - offset) // 12)
+        month_number = month_index + 1
+        month_label = date(year, month_number, 1).strftime('%b')
+        month_total = Invoice.objects.filter(
+            issue_date__year=year,
+            issue_date__month=month_number,
+            payment_status='paid',
+        ).aggregate(total=Sum('service_amount'))['total'] or 0
+        monthly_revenue.append({'label': month_label, 'total': month_total})
+    monthly_revenue.reverse()
+
+    status_breakdown = list(
+        RepairOrder.objects.values('status').annotate(total=Count('pk')).order_by('-total')
+    )
+
+    top_customers = list(
+        Customer.objects.annotate(
+            total_spend=Sum(
+                'vehicles__repair_orders__invoice__service_amount',
+                filter=Q(vehicles__repair_orders__invoice__payment_status='paid')
+            )
+        ).order_by('-total_spend')[:5]
+    )
+
+    recent_paid_invoices = Invoice.objects.select_related('repair_order__vehicle__customer').filter(payment_status='paid').order_by('-issue_date')[:5]
+
+    context = {
+        'total_customers': total_customers,
+        'open_repair_orders': open_repair_orders,
+        'completed_repairs': completed_repairs,
+        'pending_approval': pending_approval,
+        'paid_invoices': paid_invoices,
+        'unpaid_invoices': unpaid_invoices,
+        'total_revenue': total_revenue,
+        'average_invoice': average_invoice,
+        'monthly_revenue': monthly_revenue,
+        'status_breakdown': status_breakdown,
+        'top_customers': top_customers,
+        'recent_paid_invoices': recent_paid_invoices,
+    }
+    return render(request, 'workshop/report.html', context)
+
+
 @login_required
 def dashboard(request):
     profile = getattr(request.user, 'userprofile', None)

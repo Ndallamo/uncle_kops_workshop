@@ -47,15 +47,42 @@ class RepairOrderForm(forms.ModelForm):
 
 
 class LaborLineForm(forms.ModelForm):
+    total_amount = forms.DecimalField(
+        required=False,
+        disabled=True,
+        label='Total amount',
+        decimal_places=2,
+        max_digits=10,
+        initial=0,
+        widget=forms.NumberInput(attrs={'readonly': 'readonly'})
+    )
+
     class Meta:
         model  = LaborLine
-        fields = ['service_item', 'hours', 'rate', 'notes']
+        fields = ['service_item', 'hours', 'rate', 'notes', 'total_amount']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['service_item'].empty_label = 'Choose item'
+        self.fields['service_item'].label = 'Service item'
+        if self.data:
+            try:
+                hours = float(self.data.get('hours', 0) or 0)
+                rate = float(self.data.get('rate', 0) or 0)
+                self.fields['total_amount'].initial = round(hours * rate, 2)
+            except (TypeError, ValueError):
+                self.fields['total_amount'].initial = 0
 
 
 class PartsLineForm(forms.ModelForm):
     class Meta:
         model  = PartsLine
         fields = ['part', 'quantity', 'unit_price']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['part'].empty_label = 'Choose Part'
+        self.fields['part'].label = 'Part'
 
 
 class InvoiceForm(forms.ModelForm):

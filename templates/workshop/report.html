@@ -1,0 +1,128 @@
+{% extends "workshop/base.html" %}
+{% block title %}Reports – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Reports & Analytics{% endblock %}
+
+{% block topbar_actions %}
+  <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-sm">Back to dashboard</a>
+    <a href="{% url 'invoice_list' %}" class="btn btn-primary btn-sm">Invoices</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+  <div class="card-title">Performance Overview</div>
+  <div class="context-note">A quick snapshot of business health across customers, repairs, and revenue.</div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card orange">
+    <div class="stat-value">{{ total_revenue|floatformat:2 }}</div>
+    <div class="stat-label">Revenue collected</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-value">{{ total_customers }}</div>
+    <div class="stat-label">Customers</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-value">{{ open_repair_orders }}</div>
+    <div class="stat-label">Open repairs</div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ completed_repairs }}</div>
+    <div class="stat-label">Completed</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-value">{{ unpaid_invoices }}</div>
+    <div class="stat-label">Unpaid invoices</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ average_invoice|floatformat:2 }}</div>
+    <div class="stat-label">Avg. invoice</div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1.2fr .8fr; gap:20px; margin-bottom:20px;">
+  <div class="card">
+    <div class="card-title">Monthly revenue</div>
+    <div style="display:flex; align-items:flex-end; gap:12px; min-height:220px; padding-top:16px;">
+      {% for item in monthly_revenue %}
+        {% with height=item.total|default:0 %}
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:8px;">
+            <div style="width:100%; display:flex; align-items:flex-end; justify-content:center; min-height:160px;">
+              <div style="width:100%; max-width:42px; height:{{ item.total|floatformat:0|add:"0" }}px; background:linear-gradient(180deg,#f97316,#fb923c); border-radius:8px 8px 0 0; min-height:10px; opacity:0.9;"></div>
+            </div>
+            <span class="text-muted" style="font-size:11px;">{{ item.label }}</span>
+          </div>
+        {% endwith %}
+      {% empty %}
+        <div class="text-muted">No paid invoices recorded yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Repair status mix</div>
+    <div style="display:grid; gap:10px; margin-top:12px;">
+      {% for status in status_breakdown %}
+      <div>
+        <div class="flex justify-between mb-1">
+          <span class="text-muted">{{ status.status|title }}</span>
+          <span class="fw-600">{{ status.total }}</span>
+        </div>
+        <div style="height:8px; background:rgba(255,255,255,0.06); border-radius:999px; overflow:hidden;">
+          <div style="height:100%; width:{{ status.total|floatformat:0|add:'0' }}%; background:linear-gradient(90deg,#f97316,#fbbf24); border-radius:999px;"></div>
+        </div>
+      </div>
+      {% empty %}
+      <div class="text-muted">No repair statuses available.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+  <div class="card">
+    <div class="card-title">Top customers</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Customer</th><th>Spend</th></tr>
+        </thead>
+        <tbody>
+          {% for customer in top_customers %}
+          <tr>
+            <td>{{ customer.full_name }}</td>
+            <td>R {{ customer.total_spend|default:0|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="2" class="text-muted">No paid invoices yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Recent paid invoices</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Invoice</th><th>Customer</th><th>Amount</th></tr>
+        </thead>
+        <tbody>
+          {% for invoice in recent_paid_invoices %}
+          <tr>
+            <td>INV#{{ invoice.pk }}</td>
+            <td>{{ invoice.repair_order.vehicle.customer.full_name }}</td>
+            <td>R {{ invoice.service_amount|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" class="text-muted">No paid invoices yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
