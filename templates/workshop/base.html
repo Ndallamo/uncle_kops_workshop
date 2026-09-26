@@ -584,6 +584,9 @@
         <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
           <span class="icon">📊</span> Admin dashboard
         </a>
+        <a href="{% url 'report' %}" class="nav-item {% if request.resolver_match.url_name == 'report' %}active{% endif %}">
+          <span class="icon">📈</span> Reports
+        </a>
         <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
           <span class="icon">🔧</span> Repair Orders
         </a>
