@@ -14,10 +14,12 @@
   <form method="post" style="display:flex; flex-direction:column; gap:16px;">
     {% csrf_token %}
     <label class="form-label">Payment Method</label>
-    <select name="payment_method" class="form-control">
-      <option value="card" selected>Card</option>
+    <select name="payment_method" class="form-control" required>
+      <option value="">Choose method</option>
       <option value="cash">Cash</option>
-      <option value="bank_transfer">Bank Transfer</option>
+      <option value="card">Card</option>
+      <option value="eft">EFT</option>
+      <option value="other">Other</option>
     </select>
 
     <button type="submit" class="btn btn-primary">Submit Payment</button>
