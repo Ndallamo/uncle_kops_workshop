@@ -1,52 +1,124 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth import login
-from django.contrib.auth.models import User
+
+from django.contrib.auth import login, logout
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
+
 from django.contrib import messages
+
 from django.db.models import Count, Sum, Q
+
 from django.utils import timezone
+
 from datetime import date, timedelta
+
 from django.http import JsonResponse, HttpResponseBadRequest
+
 from django.views.decorators.http import require_POST, require_GET
+
 from django.views.decorators.csrf import csrf_exempt
+
 import json
+
 from django.contrib.auth import authenticate
+
 from django.core.cache import cache
 
-from .models import Customer, Vehicle, RepairOrder, LaborLine, PartsLine, Invoice, Appointment, Part, ServiceItem, UserProfile
-from .forms  import (CustomerForm, VehicleForm, RepairOrderForm, LaborLineForm,
-                     PartsLineForm, InvoiceForm, AppointmentForm, PartForm, ServiceItemForm, UserRegistrationForm,
-                     EmployeeForm, EmployeeEditForm)
+from .models import (
+    Customer,
+    Vehicle,
+    RepairOrder,
+    LaborLine,
+    PartsLine,
+    Invoice,
+    Appointment,
+    Part,
+    ServiceItem,
+    UserProfile,
+    EmailVerificationToken,
+)
+
+from .forms import (
+    CustomerForm,
+    VehicleForm,
+    RepairOrderForm,
+    LaborLineForm,
+    PartsLineForm,
+    InvoiceForm,
+    AppointmentForm,
+    PartForm,
+    ServiceItemForm,
+    UserRegistrationForm,
+    EmployeeForm,
+    EmployeeEditForm,
+)
+
 from .auth_utils import (
     send_verification_email,
     can_resend_verification,
-    send_service_request_confirmation,
     send_password_reset_email,
     send_invoice_ready_email,
+    send_service_request_confirmation,
 )
-from .models import EmailVerificationToken
 
 
 # ─────────────────────────────────────────────
 #  AUTH
 # ─────────────────────────────────────────────
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    form = AuthenticationForm(request, data=request.POST or None)
+
+    if request.method == 'POST' and form.is_valid():
+        user = form.get_user()
+        profile = getattr(user, 'userprofile', None)
+
+        if profile and profile.role == 'customer' and not profile.is_verified:
+            form.add_error(
+                None,
+                'Please verify your email address before signing in.'
+            )
+        else:
+            login(request, user)
+            return redirect(request.POST.get('next') or 'dashboard')
+
+    return render(
+        request,
+        'workshop/login.html',
+        {
+            'form': form,
+            'next': request.GET.get('next', ''),
+        }
+    )
+
+
 def register(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
 
     if request.method == 'POST':
         form = UserRegistrationForm(request.POST)
+
         if form.is_valid():
             # Create user but do NOT auto-login until email verified
             user = form.save(commit=False)
             role = form.cleaned_data.get('role')
+
             if role == 'admin':
                 user.is_staff = True
+
             user.is_active = True
             user.save()
 
-            UserProfile.objects.create(user=user, role=role, is_verified=False)
+            UserProfile.objects.create(
+                user=user,
+                role=role,
+                is_verified=False
+            )
 
             if role == 'customer':
                 Customer.objects.get_or_create(
@@ -54,97 +126,159 @@ def register(request):
                     defaults={
                         'first_name': form.cleaned_data.get('first_name'),
                         'last_name': form.cleaned_data.get('last_name'),
+                        'phone': form.cleaned_data.get('phone', ''),
+                        'address': form.cleaned_data.get('address', ''),
                         'notes': '',
                     }
                 )
 
             # Send verification email
             try:
-                send_verification_email(request, user, ttl_minutes=30)
+                send_verification_email(
+                    request,
+                    user,
+                    ttl_minutes=30
+                )
             except Exception:
-                messages.warning(request, 'Account created but failed to send verification email. Contact support.')
+                messages.warning(
+                    request,
+                    'Account created but failed to send verification email. Contact support.'
+                )
                 return redirect('login')
 
-            messages.success(request, 'Account created. Please check your email to verify your account.')
+            messages.success(
+                request,
+                'Account created. Please check your email to verify your account.'
+            )
+
             return redirect('login')
+
     else:
         form = UserRegistrationForm()
-    return render(request, 'workshop/register.html', {'form': form})
 
-
-def login_view(request):
-    if request.user.is_authenticated:
-        return redirect('dashboard')
-
-    form = AuthenticationForm(request, data=request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        user = form.get_user()
-        profile = getattr(user, 'userprofile', None)
-        if profile and profile.role == 'customer' and not profile.is_verified:
-            form.add_error(None, 'Please verify your email address before signing in.')
-        else:
-            login(request, user)
-            return redirect(request.POST.get('next') or 'dashboard')
-
-    return render(request, 'workshop/login.html', {'form': form, 'next': request.GET.get('next', '')})
+    return render(
+        request,
+        'workshop/register.html',
+        {'form': form}
+    )
 
 
 def forgot_password(request):
     if request.method == 'POST':
         email = request.POST.get('email')
+
         if not email:
-            messages.error(request, 'Please provide your email address.')
+            messages.error(
+                request,
+                'Please provide your email address.'
+            )
             return redirect('forgot_password')
+
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            # do not reveal whether a user exists
-            messages.success(request, 'If an account with that email exists, a reset link has been sent.')
+            # Do not reveal whether a user exists
+            messages.success(
+                request,
+                'If an account with that email exists, a reset link has been sent.'
+            )
             return redirect('login')
 
         try:
-            send_password_reset_email(request, user, ttl_minutes=30)
-            messages.success(request, 'If an account with that email exists, a reset link has been sent.')
+            send_password_reset_email(
+                request,
+                user,
+                ttl_minutes=30
+            )
+
+            messages.success(
+                request,
+                'If an account with that email exists, a reset link has been sent.'
+            )
+
         except Exception:
-            messages.error(request, 'Failed to send reset email. Contact support.')
+            messages.error(
+                request,
+                'Failed to send reset email. Contact support.'
+            )
+
         return redirect('login')
 
-    return render(request, 'workshop/forgot_password.html')
+    return render(
+        request,
+        'workshop/forgot_password.html'
+    )
 
 
 def reset_password(request):
-    token = request.GET.get('token') if request.method == 'GET' else request.POST.get('token')
+    token = (
+        request.GET.get('token')
+        if request.method == 'GET'
+        else request.POST.get('token')
+    )
+
     if request.method == 'GET':
         if not token:
-            messages.error(request, 'Invalid password reset link.')
+            messages.error(
+                request,
+                'Invalid password reset link.'
+            )
             return redirect('login')
-        return render(request, 'workshop/reset_password.html', {'token': token})
+
+        return render(
+            request,
+            'workshop/reset_password.html',
+            {'token': token}
+        )
 
     # POST — perform reset
     new_password = request.POST.get('password')
     confirm = request.POST.get('password_confirm')
+
     if not new_password or new_password != confirm:
-        messages.error(request, 'Passwords do not match.')
-        return render(request, 'workshop/reset_password.html', {'token': token})
+        messages.error(
+            request,
+            'Passwords do not match.'
+        )
+
+        return render(
+            request,
+            'workshop/reset_password.html',
+            {'token': token}
+        )
 
     from .models import PasswordResetToken
+
     obj = PasswordResetToken.validate_token(token)
+
     if not obj:
-        messages.error(request, 'Invalid or expired token.')
+        messages.error(
+            request,
+            'Invalid or expired token.'
+        )
         return redirect('login')
 
     user = obj.user
-    # set new password and mark token used
+
+    # Set new password and mark token used
     user.set_password(new_password)
     user.save()
+
     obj.used = True
     obj.save()
 
-    messages.success(request, 'Your password has been reset. You can now log in.')
+    messages.success(
+        request,
+        'Your password has been reset. You can now log in.'
+    )
+
     return redirect('login')
 
 
-# --- API endpoints for registration and verification
+# ─────────────────────────────────────────────
+#  API ENDPOINTS FOR REGISTRATION AND VERIFICATION
+# ─────────────────────────────────────────────
+
 @csrf_exempt
 @require_POST
 def api_register(request):
@@ -161,58 +295,127 @@ def api_register(request):
     role = data.get('role', 'customer')
 
     if not username or not email or not password:
-        return JsonResponse({'error': 'username, email and password required'}, status=400)
+        return JsonResponse(
+            {
+                'error': 'username, email and password required'
+            },
+            status=400
+        )
 
-    if User.objects.filter(username=username).exists() or User.objects.filter(email=email).exists():
-        return JsonResponse({'error': 'user with username or email already exists'}, status=400)
+    if (
+        User.objects.filter(username=username).exists()
+        or User.objects.filter(email=email).exists()
+    ):
+        return JsonResponse(
+            {
+                'error': 'user with username or email already exists'
+            },
+            status=400
+        )
 
-    user = User.objects.create_user(username=username, email=email, password=password, first_name=first_name, last_name=last_name)
+    user = User.objects.create_user(
+        username=username,
+        email=email,
+        password=password,
+        first_name=first_name,
+        last_name=last_name
+    )
+
     if role == 'admin':
         user.is_staff = True
         user.save()
-    UserProfile.objects.create(user=user, role=role, is_verified=False)
+
+    UserProfile.objects.create(
+        user=user,
+        role=role,
+        is_verified=False
+    )
+
     if role == 'customer':
-        Customer.objects.get_or_create(email=user.email, defaults={'first_name': first_name, 'last_name': last_name})
+        Customer.objects.get_or_create(
+            email=user.email,
+            defaults={
+                'first_name': first_name,
+                'last_name': last_name
+            }
+        )
 
     try:
-        send_verification_email(request, user, ttl_minutes=30)
-    except Exception:
-        # still return created but warn
-        return JsonResponse({'status': 'created', 'warning': 'failed to send verification email'}, status=201)
+        send_verification_email(
+            request,
+            user,
+            ttl_minutes=30
+        )
 
-    return JsonResponse({'status': 'created', 'message': 'verification email sent'}, status=201)
+    except Exception:
+        # Still return created but warn
+        return JsonResponse(
+            {
+                'status': 'created',
+                'warning': 'failed to send verification email'
+            },
+            status=201
+        )
+
+    return JsonResponse(
+        {
+            'status': 'created',
+            'message': 'verification email sent'
+        },
+        status=201
+    )
 
 
 @require_GET
 def verify_email(request):
     token = request.GET.get('token')
+
     if not token:
-        return render(request, 'workshop/email_verification.html', {
-            'success': False,
-            'message': 'This verification link is missing its token.',
-        }, status=400)
+        return render(
+            request,
+            'workshop/email_verification.html',
+            {
+                'success': False,
+                'message': 'This verification link is missing its token.',
+            },
+            status=400
+        )
 
     obj = EmailVerificationToken.validate_token(token)
+
     if not obj:
-        return render(request, 'workshop/email_verification.html', {
-            'success': False,
-            'message': 'This verification link is invalid or has expired.',
-        }, status=400)
+        return render(
+            request,
+            'workshop/email_verification.html',
+            {
+                'success': False,
+                'message': 'This verification link is invalid or has expired.',
+            },
+            status=400
+        )
 
     user = obj.user
+
     obj.used = True
     obj.save()
+
     profile = getattr(user, 'userprofile', None)
+
     if profile:
         profile.is_verified = True
         profile.save()
 
-    # log the user in and return a session-based response
+    # Log the user in after successful verification
     login(request, user)
-    return render(request, 'workshop/email_verification.html', {
-        'success': True,
-        'message': 'Your email has been verified. You are now signed in.',
-    })
+
+    return render(
+        request,
+        'workshop/email_verification.html',
+        {
+            'success': True,
+            'message': 'Your email has been verified. You are now signed in.',
+        }
+    )
 
 
 @csrf_exempt
@@ -224,29 +427,52 @@ def resend_verification(request):
         return HttpResponseBadRequest('Invalid JSON')
 
     email = data.get('email')
+
     if not email:
-        return JsonResponse({'error': 'email required'}, status=400)
+        return JsonResponse(
+            {'error': 'email required'},
+            status=400
+        )
+
     try:
         user = User.objects.get(email=email)
+
     except User.DoesNotExist:
         # Do not reveal existence
         return JsonResponse({'status': 'ok'})
 
     profile = getattr(user, 'userprofile', None)
+
     if profile and profile.is_verified:
-        return JsonResponse({'status': 'already_verified'})
+        return JsonResponse(
+            {'status': 'already_verified'}
+        )
 
     if not can_resend_verification(user):
-        return JsonResponse({'error': 'rate limit exceeded'}, status=429)
+        return JsonResponse(
+            {'error': 'rate limit exceeded'},
+            status=429
+        )
 
     try:
-        send_verification_email(request, user, ttl_minutes=30)
+        send_verification_email(
+            request,
+            user,
+            ttl_minutes=30
+        )
+
     except Exception:
-        return JsonResponse({'error': 'failed to send email'}, status=500)
+        return JsonResponse(
+            {'error': 'failed to send email'},
+            status=500
+        )
 
-    return JsonResponse({'status': 'ok', 'message': 'verification email sent'})
-
-
+    return JsonResponse(
+        {
+            'status': 'ok',
+            'message': 'verification email sent'
+        }
+    )
 # ─────────────────────────────────────────────
 #  EMPLOYEES (MECHANICS)
 # ─────────────────────────────────────────────
@@ -308,7 +534,7 @@ def dashboard(request):
         pending_approval = []
         notifications = []
         if customer:
-            repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).order_by('-date_created')
+            repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).exclude(status='cancelled').order_by('-date_created')
             pending_approval = repair_orders.filter(approved=False).order_by('-date_created')
 
             for order in repair_orders[:3]:
@@ -337,13 +563,15 @@ def dashboard(request):
         })
 
     if role == 'mechanic':
-        assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(assigned_tech=request.user).order_by('-date_created')
+        assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(assigned_tech=request.user).exclude(status='cancelled').order_by('-date_created')
         active_orders = assigned_orders.exclude(status='completed')[:8]
-        pending_orders = RepairOrder.objects.select_related('vehicle__customer').filter(status='pending', assigned_tech__isnull=True).order_by('-date_created')[:8]
+        pending_orders = RepairOrder.objects.select_related('vehicle__customer').filter(status='pending', assigned_tech__isnull=True).exclude(status='cancelled').order_by('-date_created')[:8]
+        my_assignments = Appointment.objects.select_related('customer', 'vehicle').filter(assigned_mechanic=request.user).order_by('date_time')
         return render(request, 'workshop/mechanic_dashboard.html', {
             'assigned_orders': assigned_orders,
             'active_orders': active_orders,
             'pending_orders': pending_orders,
+            'my_assignments': my_assignments,
         })
 
     if role == 'admin':
@@ -470,7 +698,7 @@ def vehicle_list(request):
 @login_required
 def vehicle_detail(request, pk):
     vehicle = get_object_or_404(Vehicle, pk=pk)
-    repair_orders = vehicle.repair_orders.order_by('-date_created')
+    repair_orders = vehicle.repair_orders.exclude(status='cancelled').order_by('-date_created')
     return render(request, 'workshop/vehicle_detail.html', {'vehicle': vehicle, 'repair_orders': repair_orders})
 
 
@@ -523,8 +751,12 @@ def repair_order_list(request):
             orders = orders.filter(vehicle__customer=customer)
         else:
             orders = orders.none()
+
     if status:
         orders = orders.filter(status=status)
+    else:
+        orders = orders.exclude(status='cancelled')
+
     return render(request, 'workshop/repair_order_list.html', {
         'orders': orders,
         'status': status,
@@ -653,21 +885,67 @@ def invoice_detail(request, pk):
 @login_required
 def invoice_create(request):
     profile = getattr(request.user, 'userprofile', None)
+
     if profile and profile.role == 'customer':
-        messages.error(request, 'Customers may not create invoices.')
+        messages.error(
+            request,
+            'Customers may not create invoices.'
+        )
         return redirect('invoice_list')
 
-    form = InvoiceForm(request.POST or None)
+    repair_order_id = request.GET.get('ro')
+    repair_order = None
+
+    if repair_order_id:
+        repair_order = get_object_or_404(
+            RepairOrder,
+            pk=repair_order_id
+        )
+
+    initial = {}
+
+    if repair_order:
+        initial['repair_order'] = repair_order.pk
+        initial['service_amount'] = repair_order.grand_total
+
+    form = InvoiceForm(
+        request.POST or None,
+        initial=initial
+    )
+
     if form.is_valid():
         invoice = form.save()
-        try:
-            send_invoice_ready_email(request, invoice)
-        except Exception:
-            messages.warning(request, 'Invoice created, but the notification email could not be sent.')
-        messages.success(request, f"Invoice #{invoice.pk} created.")
-        return redirect('invoice_detail', pk=invoice.pk)
-    return render(request, 'workshop/invoice_form.html', {'form': form, 'title': 'Create Invoice'})
 
+        # Send invoice-ready email to the customer
+        try:
+            send_invoice_ready_email(
+                request,
+                invoice
+            )
+        except Exception:
+            messages.warning(
+                request,
+                'Invoice created, but the notification email could not be sent.'
+            )
+
+        messages.success(
+            request,
+            f"Invoice #{invoice.pk} created."
+        )
+
+        return redirect(
+            'invoice_detail',
+            pk=invoice.pk
+        )
+
+    return render(
+        request,
+        'workshop/invoice_form.html',
+        {
+            'form': form,
+            'title': 'Create Invoice'
+        }
+    )
 
 @login_required
 def invoice_edit(request, pk):
@@ -698,14 +976,61 @@ def invoice_pay(request, pk):
         messages.error(request, 'Access denied.')
         return redirect('dashboard')
 
+    valid_methods = {key for key, _ in Invoice.METHOD_CHOICES}
     if request.method == 'POST':
+        payment_method = request.POST.get('payment_method', '').strip()
+        if payment_method not in valid_methods:
+            messages.error(request, 'Please choose a valid payment method.')
+            return render(request, 'workshop/invoice_payment.html', {'invoice': invoice})
+
         invoice.payment_status = 'paid'
-        invoice.payment_method = request.POST.get('payment_method', invoice.payment_method or 'card')
+        invoice.payment_method = payment_method
         invoice.save()
         messages.success(request, f'Invoice #{invoice.pk} marked as paid. Thank you for your payment.')
         return redirect('invoice_detail', pk=pk)
 
     return render(request, 'workshop/invoice_payment.html', {'invoice': invoice})
+
+
+def get_or_update_vehicle_repair_order(vehicle, *, assigned_tech=None, status=None, description=None, internal_notes=None, approved=None):
+    existing = RepairOrder.objects.filter(vehicle=vehicle).exclude(status__in=['completed', 'cancelled']).order_by('-date_created').first()
+    if existing:
+        changed = False
+
+        if assigned_tech is not None and existing.assigned_tech_id != assigned_tech.pk:
+            existing.assigned_tech = assigned_tech
+            changed = True
+        if status and existing.status != status:
+            existing.status = status
+            changed = True
+        if description and existing.description != description:
+            existing.description = description
+            changed = True
+        if internal_notes:
+            if existing.internal_notes:
+                combined = existing.internal_notes + "\n" + internal_notes
+            else:
+                combined = internal_notes
+            if existing.internal_notes != combined:
+                existing.internal_notes = combined
+                changed = True
+        if approved is not None and existing.approved != approved:
+            existing.approved = approved
+            changed = True
+
+        if changed:
+            existing.save()
+        return existing
+
+    return RepairOrder.objects.create(
+        vehicle=vehicle,
+        assigned_tech=assigned_tech,
+        status=status or 'pending',
+        description=description or 'New service request',
+        internal_notes=internal_notes or '',
+        mileage_in=vehicle.mileage or 0,
+        approved=bool(approved),
+    )
 
 
 # ─────────────────────────────────────────────
@@ -727,11 +1052,17 @@ def appointment_list(request):
 @login_required
 def appointment_create(request):
     form = AppointmentForm(request.POST or None, user=request.user)
+
     if form.is_valid():
         appt = form.save(commit=False)
+
         profile = getattr(request.user, 'userprofile', None)
+
         if profile and profile.role == 'customer':
-            customer = Customer.objects.filter(email=request.user.email).first()
+            customer = Customer.objects.filter(
+                email=request.user.email
+            ).first()
+
             if not customer:
                 customer = Customer.objects.create(
                     first_name=request.user.first_name or request.user.username,
@@ -741,11 +1072,21 @@ def appointment_create(request):
                     address='',
                     notes='',
                 )
+
             appt.customer = customer
+
             vehicle_id = request.POST.get('vehicle')
+
             if not vehicle_id:
                 manual_vehicle = form.manual_vehicle_data()
-                if any(value not in (None, '', 0) for value in manual_vehicle.values()) and customer:
+
+                if (
+                    any(
+                        value not in (None, '', 0)
+                        for value in manual_vehicle.values()
+                    )
+                    and customer
+                ):
                     vehicle = Vehicle.objects.create(
                         customer=customer,
                         make=manual_vehicle['make'] or 'Unknown',
@@ -759,21 +1100,26 @@ def appointment_create(request):
                         recent_service_history=manual_vehicle['recent_service_history'] or '',
                         notes=manual_vehicle['notes'] or '',
                     )
+
                     appt.vehicle = vehicle
+
         appt.save()
 
         repair_order = None
+
         if appt.vehicle_id:
-            repair_order = RepairOrder.objects.create(
-                vehicle=appt.vehicle,
-                assigned_tech=None,
+            repair_order = get_or_update_vehicle_repair_order(
+                appt.vehicle,
                 status='pending',
                 description=appt.service_desc or 'New service request',
-                internal_notes=f"Service request booked for appointment {appt.date_time:%Y-%m-%d %H:%M}",
-                mileage_in=appt.vehicle.mileage or 0,
+                internal_notes=(
+                    f"Service request booked for appointment "
+                    f"{appt.date_time:%Y-%m-%d %H:%M}"
+                ),
                 approved=False,
             )
 
+        # Send service-request confirmation email to the customer
         try:
             send_service_request_confirmation(
                 request.user.email,
@@ -782,23 +1128,104 @@ def appointment_create(request):
                 repair_order,
             )
         except Exception:
-            messages.warning(request, 'Service request saved, but the confirmation email could not be sent.')
+            messages.warning(
+                request,
+                'Service request saved, but the confirmation email could not be sent.'
+            )
 
         request.session['new_service_request'] = True
-        messages.success(request, 'Service request submitted. A mechanic will review it and update your vehicle status soon.')
-        return redirect('dashboard')
-    return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
 
+        messages.success(
+            request,
+            'Service request submitted. A mechanic will review it and update your vehicle status soon.'
+        )
+
+        return redirect('dashboard')
+
+    return render(
+        request,
+        'workshop/appointment_form.html',
+        {
+            'form': form,
+            'title': 'Book Appointment'
+        }
+    )
 
 @login_required
 def appointment_edit(request, pk):
     appt = get_object_or_404(Appointment, pk=pk)
+    profile = getattr(request.user, 'userprofile', None)
+    role = profile.role if profile else ('admin' if request.user.is_staff else '')
+    if role != 'admin' and request.user != appt.assigned_mechanic:
+        messages.error(request, 'Only the admin or the assigned mechanic can edit this appointment.')
+        return redirect('appointment_list')
+
     form = AppointmentForm(request.POST or None, instance=appt, user=request.user)
     if form.is_valid():
-        form.save()
+        updated_appt = form.save(commit=False)
+        updated_appt.assigned_mechanic = form.cleaned_data.get('assigned_mechanic')
+        updated_appt.assignment_status = form.cleaned_data.get('assignment_status') or 'pending'
+        updated_appt.save()
+
+        if updated_appt.assigned_mechanic and updated_appt.assignment_status == 'accepted':
+            get_or_update_vehicle_repair_order(
+                updated_appt.vehicle,
+                assigned_tech=updated_appt.assigned_mechanic,
+                status='in_progress',
+                description=updated_appt.service_desc or 'Workshop appointment accepted',
+                internal_notes=f"Mechanic assignment accepted for appointment {updated_appt.date_time:%Y-%m-%d %H:%M}",
+                approved=False,
+            )
+        elif updated_appt.assigned_mechanic and updated_appt.assignment_status == 'declined':
+            get_or_update_vehicle_repair_order(
+                updated_appt.vehicle,
+                assigned_tech=None,
+                status='pending',
+                internal_notes=f"Mechanic assignment declined for appointment {updated_appt.date_time:%Y-%m-%d %H:%M}",
+                approved=False,
+            )
+
         messages.success(request, "Appointment updated.")
         return redirect('appointment_list')
     return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
+
+
+@login_required
+def appointment_decision(request, pk, action):
+    if action not in ['accept', 'decline']:
+        messages.error(request, 'Invalid assignment decision.')
+        return redirect('appointment_list')
+
+    appt = get_object_or_404(Appointment, pk=pk)
+    profile = getattr(request.user, 'userprofile', None)
+    if not profile or profile.role != 'mechanic' or appt.assigned_mechanic_id != request.user.pk:
+        messages.error(request, 'You are not assigned to this appointment.')
+        return redirect('appointment_list')
+
+    appt.assignment_status = 'accepted' if action == 'accept' else 'declined'
+    appt.save(update_fields=['assignment_status'])
+
+    if action == 'accept':
+        get_or_update_vehicle_repair_order(
+            appt.vehicle,
+            assigned_tech=request.user,
+            status='in_progress',
+            description=appt.service_desc or 'Workshop appointment accepted',
+            internal_notes=f"Mechanic {request.user.get_full_name() or request.user.username} accepted the assignment.",
+            approved=False,
+        )
+        messages.success(request, 'You accepted the service assignment.')
+    else:
+        get_or_update_vehicle_repair_order(
+            appt.vehicle,
+            assigned_tech=None,
+            status='pending',
+            internal_notes=f"Mechanic {request.user.get_full_name() or request.user.username} declined the assignment.",
+            approved=False,
+        )
+        messages.warning(request, 'You declined the service assignment.')
+
+    return redirect('dashboard')
 
 
 # ─────────────────────────────────────────────
