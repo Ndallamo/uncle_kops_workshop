@@ -1,0 +1,112 @@
+{% extends "workshop/base.html" %}
+{% block title %}{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}{% endblock %}
+{% block page_title %}{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}{% endblock %}
+{% block topbar_actions %}
+  <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'customer_detail' vehicle.customer.pk %}" class="btn btn-secondary btn-sm">← Customer</a>
+    {% if user.userprofile.role != 'customer' %}
+      <a href="{% url 'vehicle_edit' vehicle.pk %}" class="btn btn-secondary btn-sm">Edit vehicle</a>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
+
+  <!-- Left: Vehicle info -->
+  <div>
+    <div class="card mb-4">
+      <div class="card-title">Vehicle Details</div>
+      <div class="page-subtitle">Service history and key details for this vehicle.</div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px;">
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Customer</div>
+          <a href="{% url 'customer_detail' vehicle.customer.pk %}" class="text-orange fw-600">{{ vehicle.customer.full_name }}</a>
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Vehicle</div>
+          {{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">VIN</div>
+          {{ vehicle.vin|default:'-' }}
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">License plate</div>
+          {{ vehicle.license_plate|default:'-' }}
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Color</div>
+          {{ vehicle.color|default:'-' }}
+        </div>
+        <div>
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Mileage</div>
+          {{ vehicle.mileage|floatformat:"0" }} km
+        </div>
+      </div>
+
+      {% if vehicle.service_plan %}
+      <div style="margin-top:16px;">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Service plan</div>
+        <p style="font-size:14px; line-height:1.6;">{{ vehicle.service_plan }}</p>
+      </div>
+      {% endif %}
+
+      {% if vehicle.recent_service_history %}
+      <div style="margin-top:16px; padding:12px; background:rgba(34,197,94,.05); border-radius:8px; border-left:3px solid var(--green);">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Recent service history</div>
+        <p style="font-size:14px; line-height:1.6;">{{ vehicle.recent_service_history }}</p>
+      </div>
+      {% endif %}
+
+      {% if vehicle.notes %}
+      <div style="margin-top:16px; padding:12px; background:rgba(59,130,246,.05); border-radius:8px; border-left:3px solid var(--blue);">
+        <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Notes</div>
+        <p style="font-size:14px; line-height:1.6;">{{ vehicle.notes }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-4">
+        <div class="card-title">Repair Orders</div>
+        <a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">View all</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>RO #</th><th>Status</th><th>Technician</th><th>Date</th></tr>
+          </thead>
+          <tbody>
+            {% for ro in repair_orders %}
+            <tr>
+              <td><a href="{% url 'repair_order_detail' ro.pk %}" class="text-orange fw-600">RO #{{ ro.pk }}</a></td>
+              <td><span class="badge badge-blue">{{ ro.get_status_display }}</span></td>
+              <td>{% if ro.assigned_tech %}{{ ro.assigned_tech.get_full_name|default:ro.assigned_tech.username }}{% else %}Unassigned{% endif %}</td>
+              <td>{{ ro.date_created|date:"d M Y" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-muted">No repair orders for this vehicle.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Quick actions -->
+  <div>
+    <div class="card" style="position:sticky; top:80px;">
+      <div class="card-title">Quick Actions</div>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <a href="{% url 'repair_order_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary" style="justify-content:center;">+ Create repair order</a>
+        <a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-secondary" style="justify-content:center;">📅 Book appointment</a>
+        {% if user.userprofile.role != 'customer' %}
+          <a href="{% url 'vehicle_edit' vehicle.pk %}" class="btn btn-secondary" style="justify-content:center;">✏️ Edit vehicle</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
