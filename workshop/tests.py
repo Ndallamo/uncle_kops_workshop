@@ -20,9 +20,9 @@ class InvoiceFormTests(TestCase):
         labor_form = LaborLineForm()
         parts_form = PartsLineForm()
 
-        self.assertEqual(labor_form.fields['service_item'].empty_label, 'Choose item')
+        self.assertEqual(labor_form.fields['service_item'].empty_label, 'Choose service item')
         self.assertIn('total_amount', labor_form.fields)
-        self.assertEqual(parts_form.fields['part'].empty_label, 'Choose Part')
+        self.assertEqual(parts_form.fields['part'].empty_label, 'Choose part')
 
 
 class ReportPageTests(TestCase):
@@ -60,3 +60,18 @@ class LegalAndErrorPageTests(TestCase):
         response = self.client.get('/definitely-missing-page/')
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, 'Page not found')
+
+
+class ReportExportTests(TestCase):
+    def test_admin_can_download_report_spreadsheet(self):
+        user = User.objects.create_user(username='reportexport', email='export@example.com', password='Password123!')
+        user.is_staff = True
+        user.save()
+        UserProfile.objects.create(user=user, role='admin', is_verified=True)
+
+        self.client.force_login(user)
+        response = self.client.get(reverse('report_export'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        self.assertIn('Month', response.content.decode('utf-8'))

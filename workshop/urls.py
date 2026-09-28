@@ -11,6 +11,7 @@ urlpatterns = [
     # Dashboard / Reporting
     path('',                        views.dashboard,              name='dashboard'),
     path('report/',                 views.report,                 name='report'),
+    path('report/export/',          views.report_export,           name='report_export'),
     path('privacy-policy/',         views.privacy_policy,         name='privacy_policy'),
     path('terms-and-conditions/',   views.terms_and_conditions,   name='terms_and_conditions'),
 

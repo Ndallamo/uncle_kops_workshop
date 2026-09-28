@@ -13,12 +13,13 @@ from django.utils import timezone
 
 from datetime import date, timedelta
 
-from django.http import JsonResponse, HttpResponseBadRequest
+from django.http import JsonResponse, HttpResponseBadRequest, HttpResponse
 
 from django.views.decorators.http import require_POST, require_GET
 
 from django.views.decorators.csrf import csrf_exempt
 
+import csv
 import json
 
 from django.contrib.auth import authenticate
@@ -557,6 +558,10 @@ def report(request):
         monthly_revenue.append({'label': month_label, 'total': month_total})
     monthly_revenue.reverse()
 
+    max_monthly_revenue = max((item['total'] for item in monthly_revenue), default=0) or 1
+    for item in monthly_revenue:
+        item['height_percent'] = max(12, round((item['total'] / max_monthly_revenue) * 100)) if max_monthly_revenue else 0
+
     status_breakdown = list(
         RepairOrder.objects.values('status').annotate(total=Count('pk')).order_by('-total')
     )
@@ -587,6 +592,43 @@ def report(request):
         'recent_paid_invoices': recent_paid_invoices,
     }
     return render(request, 'workshop/report.html', context)
+
+
+@login_required
+def report_export(request):
+    profile = getattr(request.user, 'userprofile', None)
+    role = profile.role if profile else ('admin' if request.user.is_staff else '')
+
+    if role != 'admin':
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="uncle_kops_workshop_report.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Month', 'Revenue', 'Customers', 'Open Repairs', 'Completed Repairs', 'Unpaid Invoices'])
+
+    for offset in range(6):
+        month_index = (date.today().month - 1 - offset) % 12
+        year = date.today().year + ((date.today().month - 1 - offset) // 12)
+        month_number = month_index + 1
+        month_label = date(year, month_number, 1).strftime('%b')
+        month_revenue = Invoice.objects.filter(
+            issue_date__year=year,
+            issue_date__month=month_number,
+            payment_status='paid',
+        ).aggregate(total=Sum('service_amount'))['total'] or 0
+        writer.writerow([
+            month_label,
+            float(month_revenue),
+            Customer.objects.count(),
+            RepairOrder.objects.exclude(status__in=['completed', 'cancelled']).count(),
+            RepairOrder.objects.filter(status='completed').count(),
+            Invoice.objects.filter(payment_status='unpaid').count(),
+        ])
+
+    return response
 
 
 @login_required
@@ -868,8 +910,14 @@ def repair_order_detail(request, pk):
 @login_required
 def repair_order_create(request):
     profile = getattr(request.user, 'userprofile', None)
+    is_admin = (profile and profile.role == 'admin') or request.user.is_staff
+
     if profile and profile.role == 'customer':
         messages.error(request, 'Customers may not create repair orders directly. Please submit a service request instead.')
+        return redirect('dashboard')
+
+    if not is_admin:
+        messages.error(request, 'Only admins can create repair orders.')
         return redirect('dashboard')
 
     form = RepairOrderForm(request.POST or None)

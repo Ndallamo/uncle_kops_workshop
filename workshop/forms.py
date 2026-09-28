@@ -26,6 +26,7 @@ class VehicleForm(forms.ModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['customer'].empty_label = 'Choose customer'
         if user is not None:
             profile = getattr(user, 'userprofile', None)
             if profile and profile.role == 'customer':
@@ -45,6 +46,11 @@ class RepairOrderForm(forms.ModelForm):
             'internal_notes': forms.Textarea(attrs={'rows': 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['vehicle'].empty_label = 'Choose vehicle'
+        self.fields['assigned_tech'].empty_label = 'Choose technician'
+
 
 class LaborLineForm(forms.ModelForm):
     total_amount = forms.DecimalField(
@@ -53,7 +59,7 @@ class LaborLineForm(forms.ModelForm):
         label='Total amount',
         decimal_places=2,
         max_digits=10,
-        initial=0,
+        initial=None,
         widget=forms.NumberInput(attrs={'readonly': 'readonly'})
     )
 
@@ -63,15 +69,16 @@ class LaborLineForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['service_item'].empty_label = 'Choose item'
+        self.fields['service_item'].empty_label = 'Choose service item'
         self.fields['service_item'].label = 'Service item'
+        self.fields['total_amount'].initial = None
         if self.data:
             try:
                 hours = float(self.data.get('hours', 0) or 0)
                 rate = float(self.data.get('rate', 0) or 0)
                 self.fields['total_amount'].initial = round(hours * rate, 2)
             except (TypeError, ValueError):
-                self.fields['total_amount'].initial = 0
+                self.fields['total_amount'].initial = None
 
 
 class PartsLineForm(forms.ModelForm):
@@ -81,7 +88,7 @@ class PartsLineForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['part'].empty_label = 'Choose Part'
+        self.fields['part'].empty_label = 'Choose part'
         self.fields['part'].label = 'Part'
 
 
@@ -197,6 +204,9 @@ class AppointmentForm(forms.ModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['customer'].empty_label = 'Choose customer'
+        self.fields['vehicle'].empty_label = 'Choose vehicle'
+        self.fields['assigned_mechanic'].empty_label = 'Choose mechanic'
         if user is not None:
             profile = getattr(user, 'userprofile', None)
             if profile and profile.role == 'customer':

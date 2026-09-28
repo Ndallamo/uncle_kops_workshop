@@ -5,7 +5,8 @@
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
     <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-sm">Back to dashboard</a>
-    <a href="{% url 'invoice_list' %}" class="btn btn-primary btn-sm">Invoices</a>
+    <a href="{% url 'report_export' %}" class="btn btn-primary btn-sm">Download spreadsheet</a>
+    <a href="{% url 'invoice_list' %}" class="btn btn-secondary btn-sm">Invoices</a>
   </div>
 {% endblock %}
 
@@ -56,12 +57,15 @@
   .chart-bars {
     display: flex;
     align-items: flex-end;
-    gap: 12px;
-    min-height: 220px;
-    padding-top: 12px;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 180px;
+    padding: 8px 4px 0;
+    width: 100%;
   }
   .bar-col {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -69,18 +73,20 @@
   }
   .bar-wrap {
     width: 100%;
-    min-height: 160px;
+    max-width: 44px;
+    height: 140px;
     display: flex;
     align-items: flex-end;
     justify-content: center;
   }
   .bar-fill {
     width: 100%;
-    max-width: 42px;
-    min-height: 10px;
+    max-width: 32px;
+    min-height: 12px;
     background: linear-gradient(180deg, #f97316, #fb923c);
-    border-radius: 8px 8px 0 0;
+    border-radius: 10px 10px 0 0;
     opacity: 0.95;
+    transition: height 0.2s ease;
   }
   .report-table table {
     margin-top: 10px;
@@ -142,7 +148,7 @@
       {% for item in monthly_revenue %}
         <div class="bar-col">
           <div class="bar-wrap">
-            <div class="bar-fill" style="height: {{ item.total|default:0|floatformat:0 }}px;"></div>
+            <div class="bar-fill" style="height: {{ item.height_percent|default:0 }}%;"></div>
           </div>
           <span class="text-muted" style="font-size:11px;">{{ item.label }}</span>
         </div>
