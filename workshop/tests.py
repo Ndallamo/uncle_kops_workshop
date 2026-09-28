@@ -16,6 +16,7 @@ class InvoiceFormTests(TestCase):
         self.assertEqual(form.fields['repair_order'].empty_label, 'Choose repair/vehicle')
         self.assertEqual(form.fields['payment_method'].choices[0][1], 'Choose method')
 
+<<<<<<< HEAD
     def test_line_item_forms_use_descriptive_empty_labels(self):
         labor_form = LaborLineForm()
         parts_form = PartsLineForm()
@@ -37,3 +38,10 @@ class ReportPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Performance Overview')
+=======
+
+class AuthUrlTests(TestCase):
+    def test_password_reset_routes_exist(self):
+        self.assertEqual(reverse('forgot_password'), '/forgot-password/')
+        self.assertEqual(reverse('reset_password'), '/reset-password/')
+>>>>>>> a669431cca29cb08f0c0d7198d8c80163a6f03f0
