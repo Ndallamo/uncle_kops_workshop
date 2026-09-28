@@ -3,7 +3,17 @@ Django settings for Uncle Kop's Workshop
 """
 import os
 from pathlib import Path
+<<<<<<< HEAD
 from dotenv import load_dotenv
+=======
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - dependency is installed in normal dev/prod envs
+    def load_dotenv(*args, **kwargs):
+        return False
+
+>>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
 import pymysql
 
 pymysql.install_as_MySQLdb()
