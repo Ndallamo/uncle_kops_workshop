@@ -7,7 +7,11 @@ from django.contrib.auth.decorators import login_required
 
 from django.contrib import messages
 
+<<<<<<< HEAD
 from django.db.models import Count, Sum, Q, F
+=======
+from django.db.models import Count, Sum, Q
+>>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
 
 from django.utils import timezone
 

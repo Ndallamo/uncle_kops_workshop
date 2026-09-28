@@ -6,9 +6,13 @@ urlpatterns = [
     path('api/auth/register',        views.api_register,            name='api_register'),
     path('verify-email/',            views.verify_email,           name='verify_email'),
     path('api/auth/resend-verification', views.resend_verification,  name='resend_verification'),
+<<<<<<< HEAD
     path('forgot-password/',         views.forgot_password,         name='forgot_password'),
     path('reset-password/',          views.reset_password,          name='reset_password'),
     # Dashboard / Reporting
+=======
+    # Dashboard
+>>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
     path('',                        views.dashboard,              name='dashboard'),
     path('report/',                 views.report,                 name='report'),
 
