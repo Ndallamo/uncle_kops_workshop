@@ -7,11 +7,7 @@ from django.contrib.auth.decorators import login_required
 
 from django.contrib import messages
 
-<<<<<<< HEAD
 from django.db.models import Count, Sum, Q, F
-=======
-from django.db.models import Count, Sum, Q
->>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
 
 from django.utils import timezone
 
@@ -681,6 +677,22 @@ def dashboard(request):
 def models_low_stock():
     from django.db.models import F
     return F('reorder_level')
+
+
+def privacy_policy(request):
+    return render(request, 'workshop/privacy_policy.html', {'page_title': 'Privacy Policy'})
+
+
+def terms_and_conditions(request):
+    return render(request, 'workshop/terms_and_conditions.html', {'page_title': 'Terms and Conditions'})
+
+
+def custom_404(request, exception):
+    return render(request, '404.html', {'exception': exception}, status=404)
+
+
+def custom_500(request):
+    return render(request, '500.html', status=500)
 
 
 # ─────────────────────────────────────────────

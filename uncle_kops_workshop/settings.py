@@ -3,9 +3,6 @@ Django settings for Uncle Kop's Workshop
 """
 import os
 from pathlib import Path
-<<<<<<< HEAD
-from dotenv import load_dotenv
-=======
 
 try:
     from dotenv import load_dotenv
@@ -13,7 +10,6 @@ except ImportError:  # pragma: no cover - dependency is installed in normal dev/
     def load_dotenv(*args, **kwargs):
         return False
 
->>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
 import pymysql
 
 pymysql.install_as_MySQLdb()
@@ -38,6 +34,20 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-CHANGE-THIS-IN
 DEBUG = True  # Set to False in production
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.15.68']
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+else:
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 
 # Encryption key for AES-256-GCM (set from env in production). Base64-encoded 32 bytes.
 import base64
@@ -118,7 +128,7 @@ DATABASES = {
         'NAME': 'uncle_kops_db',
         'USER': 'django_user',
         'PASSWORD': 'UncleKops2024!',
-        'HOST': '192.168.15.68',
+        'HOST': '192.168.14.132',
         'PORT': '3306',
     }
     

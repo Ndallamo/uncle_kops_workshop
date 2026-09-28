@@ -16,8 +16,6 @@ class InvoiceFormTests(TestCase):
         self.assertEqual(form.fields['repair_order'].empty_label, 'Choose repair/vehicle')
         self.assertEqual(form.fields['payment_method'].choices[0][1], 'Choose method')
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     def test_line_item_forms_use_descriptive_empty_labels(self):
         labor_form = LaborLineForm()
         parts_form = PartsLineForm()
@@ -39,15 +37,26 @@ class ReportPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Performance Overview')
-=======
-=======
->>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
+
 
 class AuthUrlTests(TestCase):
     def test_password_reset_routes_exist(self):
         self.assertEqual(reverse('forgot_password'), '/forgot-password/')
         self.assertEqual(reverse('reset_password'), '/reset-password/')
-<<<<<<< HEAD
->>>>>>> a669431cca29cb08f0c0d7198d8c80163a6f03f0
-=======
->>>>>>> 1d39633f91473004feaf8eca50b62c2897103b05
+
+
+class LegalAndErrorPageTests(TestCase):
+    def test_privacy_policy_page_loads(self):
+        response = self.client.get(reverse('privacy_policy'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Privacy Policy')
+
+    def test_terms_and_conditions_page_loads(self):
+        response = self.client.get(reverse('terms_and_conditions'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Terms and Conditions')
+
+    def test_missing_page_uses_custom_404_template(self):
+        response = self.client.get('/definitely-missing-page/')
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, 'Page not found')
