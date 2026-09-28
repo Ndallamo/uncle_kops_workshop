@@ -1,38 +1,47 @@
 {% extends "workshop/base.html" %}
 {% block title %}Privacy Policy – Uncle Kop's Workshop{% endblock %}
 
-{% block content %}
-<div class="legal-page" style="margin: 32px auto;">
-  <div style="margin-bottom: 18px;">
-    <a href="{% url 'login' %}" class="btn btn-secondary btn-sm">← Back to login</a>
+{% block login_content %}
+<div style="width:100%; max-width:900px; margin:32px auto;">
+  <div style="text-align:center; margin-bottom:24px;">
+    <div class="login-header">
+      Uncle <span style="color:var(--orange);">Kop's</span><br>Workshop
+    </div>
+    <div class="login-subheader">Privacy Policy</div>
   </div>
-  <h1>Privacy Policy</h1>
-  <p>Uncle Kop's Workshop is committed to protecting the privacy and personal information of our customers, staff, and vehicle owners. This policy explains how we collect, use, store, and protect information when you use our services.</p>
 
-  <h2>Information We Collect</h2>
-  <p>We may collect personal information such as your name, email address, phone number, address, service requests, vehicle details, and invoice information when you submit forms, register an account, or use our workshop services.</p>
+  <div class="card legal-page" style="padding:28px 28px 20px;">
+    <div style="margin-bottom:18px;">
+      <a href="{% url 'login' %}" class="btn btn-secondary btn-sm">← Back to login</a>
+    </div>
 
-  <h2>How We Use Your Information</h2>
-  <ul>
-    <li>To manage bookings, repairs, invoicing, and customer communication.</li>
-    <li>To verify your identity and protect account access.</li>
-    <li>To provide support, reminders, and service updates.</li>
-    <li>To maintain internal records for compliance and operational use.</li>
-  </ul>
+    <p>Uncle Kop's Workshop is committed to protecting the privacy and personal information of our customers, staff, and vehicle owners. This policy explains how we collect, use, store, and protect information when you use our services.</p>
 
-  <h2>Data Storage and Security</h2>
-  <p>We store personal information on secure systems and apply reasonable administrative, technical, and organisational safeguards to protect it from unauthorised access, disclosure, or misuse.</p>
+    <h2>Information We Collect</h2>
+    <p>We may collect personal information such as your name, email address, phone number, address, service requests, vehicle details, and invoice information when you submit forms, register an account, or use our workshop services.</p>
 
-  <h2>Cookies</h2>
-  <p>We use cookies to remember your preferences, maintain your session, and support the operation of the application. You may disable cookies in your browser, although doing so may affect the functionality of parts of the site.</p>
+    <h2>How We Use Your Information</h2>
+    <ul>
+      <li>To manage bookings, repairs, invoicing, and customer communication.</li>
+      <li>To verify your identity and protect account access.</li>
+      <li>To provide support, reminders, and service updates.</li>
+      <li>To maintain internal records for compliance and operational use.</li>
+    </ul>
 
-  <h2>Third Parties</h2>
-  <p>We do not sell personal information. We may share information with trusted providers only where necessary to deliver essential services such as email delivery, hosting, or business operations.</p>
+    <h2>Data Storage and Security</h2>
+    <p>We store personal information on secure systems and apply reasonable administrative, technical, and organisational safeguards to protect it from unauthorised access, disclosure, or misuse.</p>
 
-  <h2>Your Rights</h2>
-  <p>You may request access to, correction of, or deletion of personal information held by us where lawful and applicable. Contact our support team to make such a request.</p>
+    <h2>Cookies</h2>
+    <p>We use cookies to remember your preferences, maintain your session, and support the operation of the application. You may disable cookies in your browser, although doing so may affect the functionality of parts of the site.</p>
 
-  <h2>Contact</h2>
-  <p>If you have questions about this Privacy Policy, please contact us through the workshop support channels or the contact details shown on the site.</p>
+    <h2>Third Parties</h2>
+    <p>We do not sell personal information. We may share information with trusted providers only where necessary to deliver essential services such as email delivery, hosting, or business operations.</p>
+
+    <h2>Your Rights</h2>
+    <p>You may request access to, correction of, or deletion of personal information held by us where lawful and applicable. Contact our support team to make such a request.</p>
+
+    <h2>Contact</h2>
+    <p>If you have questions about this Privacy Policy, please contact us through the workshop support channels or the contact details shown on the site.</p>
+  </div>
 </div>
 {% endblock %}
