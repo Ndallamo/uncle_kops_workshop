@@ -111,8 +111,88 @@
       border-top: 1px solid var(--border);
       font-size: 13px;
       color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
     .sidebar-footer a { color: var(--orange2); text-decoration: none; }
+    .legal-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .page-footer {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-top: 20px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .page-footer a {
+      color: var(--orange2);
+      text-decoration: none;
+    }
+    .cookie-banner {
+      position: fixed;
+      left: 20px;
+      right: 20px;
+      bottom: 20px;
+      z-index: 2000;
+      background: rgba(17, 20, 24, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 20px 35px rgba(0,0,0,0.25);
+      padding: 16px 18px;
+    }
+    .cookie-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .cookie-content p {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .cookie-content a {
+      color: var(--orange2);
+      text-decoration: none;
+    }
+    .legal-page {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+    }
+    .legal-page h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 42px;
+      letter-spacing: 1px;
+      margin-bottom: 18px;
+    }
+    .legal-page h2 {
+      font-size: 18px;
+      margin: 24px 0 12px;
+      color: var(--orange2);
+    }
+    .legal-page p,
+    .legal-page li {
+      color: var(--text);
+      line-height: 1.75;
+      font-size: 15px;
+    }
+    .legal-page ul {
+      padding-left: 18px;
+      margin: 12px 0;
+    }
 
     /* ── Main ── */
     .main {
@@ -657,8 +737,12 @@
   </nav>
 
   <div class="sidebar-footer">
-    Logged in as <strong>{{ user.username }}</strong><br>
+    <div>Logged in as <strong>{{ user.username }}</strong></div>
     <a href="{% url 'logout' %}">Sign out</a>
+    <div class="legal-links">
+      <a href="{% url 'privacy_policy' %}">Privacy Policy</a>
+      <a href="{% url 'terms_and_conditions' %}">Terms</a>
+    </div>
   </div>
 </aside>
 
@@ -683,6 +767,11 @@
     {% endif %}
 
     {% block content %}{% endblock %}
+    <footer class="page-footer">
+      <a href="{% url 'privacy_policy' %}">Privacy Policy</a>
+      <span>•</span>
+      <a href="{% url 'terms_and_conditions' %}">Terms and Conditions</a>
+    </footer>
   </div>
 </div>
 
@@ -692,9 +781,27 @@
   <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light mode" style="position:absolute; top:20px; right:20px;">
     <span id="themeIcon">🌙</span>
   </button>
-  {% block login_content %}{% endblock %}
+  <div style="width:100%; display:flex; align-items:center; justify-content:center;">
+    {% block content %}{% endblock %}
+    {% block login_content %}{% endblock %}
+  </div>
+  <div style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:12px; font-size:12px; color:var(--muted);">
+    <a href="{% url 'privacy_policy' %}" style="color:var(--orange2); text-decoration:none;">Privacy Policy</a>
+    <span>•</span>
+    <a href="{% url 'terms_and_conditions' %}" style="color:var(--orange2); text-decoration:none;">Terms and Conditions</a>
+  </div>
 </div>
 {% endif %}
+
+<div id="cookieBanner" class="cookie-banner" hidden>
+  <div class="cookie-content">
+    <div>
+      <strong>Cookie notice</strong>
+      <p>We use cookies to keep your session active and improve your experience. By continuing, you agree to our <a href="{% url 'privacy_policy' %}">Privacy Policy</a>.</p>
+    </div>
+    <button id="acceptCookies" class="btn btn-primary btn-sm" type="button">Accept</button>
+  </div>
+</div>
 
 {% block extra_js %}{% endblock %}
 
@@ -742,11 +849,35 @@
     loadTheme();
   }
 
+  function initCookieBanner() {
+    const banner = document.getElementById('cookieBanner');
+    const acceptButton = document.getElementById('acceptCookies');
+    if (!banner || !acceptButton) {
+      return;
+    }
+
+    const hasAcceptedCookies = localStorage.getItem('cookie_consent') === 'accepted';
+    if (hasAcceptedCookies) {
+      banner.hidden = true;
+      return;
+    }
+
+    banner.hidden = false;
+    acceptButton.addEventListener('click', () => {
+      localStorage.setItem('cookie_consent', 'accepted');
+      banner.hidden = true;
+    });
+  }
+
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initTheme);
+    document.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      initCookieBanner();
+    });
   } else {
     initTheme();
+    initCookieBanner();
   }
 </script>
 </body>

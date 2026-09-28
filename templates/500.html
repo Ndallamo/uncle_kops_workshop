@@ -1,0 +1,10 @@
+{% extends "workshop/base.html" %}
+{% block title %}Server error – Uncle Kop's Workshop{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:600px; margin:40px auto; text-align:center;">
+  <div class="card-title" style="margin-bottom:12px; font-size:28px;">Something went wrong</div>
+  <p style="color:var(--muted); line-height:1.6; margin-bottom:20px;">We are sorry, but the server could not complete your request. Please try again shortly or contact support.</p>
+  <a href="{% url 'dashboard' %}" class="btn btn-primary">Return to dashboard</a>
+</div>
+{% endblock %}
