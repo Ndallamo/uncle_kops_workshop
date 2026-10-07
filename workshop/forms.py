@@ -662,9 +662,15 @@ class UserRegistrationForm(UserCreationForm):
         self.fields['phone'].widget.attrs['placeholder'] = 'e.g. 071 234 5678'
         self.fields['address'].help_text = 'Optional; include street, suburb, city and postal code.'
         self.fields['address'].widget.attrs['placeholder'] = 'Street address, suburb, city and postal code'
+        self.fields['username'].widget.attrs['placeholder'] = 'e.g. john_doe'
+        self.fields['email'].widget.attrs['placeholder'] = 'e.g. john@example.com'
+        self.fields['first_name'].widget.attrs['placeholder'] = 'e.g. John'
+        self.fields['last_name'].widget.attrs['placeholder'] = 'e.g. Doe'
+        self.fields['password1'].widget.attrs['placeholder'] = 'At least 8 characters'
+        self.fields['password2'].widget.attrs['placeholder'] = 'Re-enter your password'
 
     def clean_email(self):
         email = self.cleaned_data.get('email')
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(email__iexact=email).exists():
             raise forms.ValidationError('A user with that email already exists.')
         return email

@@ -14,8 +14,17 @@
 
   <div class="card">
     <div class="card-title" style="text-align:center; margin-bottom:20px;">Create Account</div>
-    <form method="post">
+    <form method="post" id="register-form" novalidate>
       {% csrf_token %}
+      <style>
+        .field-hint { font-size:12px; color:var(--text); opacity:.75; margin-top:4px; }
+        .field-live { font-size:12px; margin-top:4px; min-height:16px; }
+        .field-live.ok { color:#2e9e5b; }
+        .field-live.bad { color:#d64545; }
+        .pw-wrap { position:relative; }
+        .pw-wrap input { width:100%; padding-right:64px; box-sizing:border-box; }
+        .pw-toggle { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:0; cursor:pointer; font-size:12px; color:var(--text); text-decoration:underline; }
+      </style>
       {% if form.non_field_errors %}
         <div class="alert alert-error" style="margin-bottom:16px;">{{ form.non_field_errors }}</div>
       {% endif %}
@@ -46,12 +55,21 @@
       </div>
       <div class="form-group" style="margin-bottom:16px;">
         <label for="id_password1">Password</label>
-        {{ form.password1 }}
+        <div class="pw-wrap">
+          {{ form.password1 }}
+          <button type="button" class="pw-toggle" data-target="id_password1" aria-label="Show password">Show</button>
+        </div>
+        <div class="field-hint">Use at least 8 characters, not only numbers, and nothing too common.</div>
+        <div class="field-live" id="pw1-live"></div>
         {% if form.password1.errors %}<div class="alert alert-error">{{ form.password1.errors }}</div>{% endif %}
       </div>
       <div class="form-group" style="margin-bottom:20px;">
         <label for="id_password2">Confirm password</label>
-        {{ form.password2 }}
+        <div class="pw-wrap">
+          {{ form.password2 }}
+          <button type="button" class="pw-toggle" data-target="id_password2" aria-label="Show password">Show</button>
+        </div>
+        <div class="field-live" id="pw2-live"></div>
         {% if form.password2.errors %}<div class="alert alert-error">{{ form.password2.errors }}</div>{% endif %}
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; padding:12px;">
@@ -63,4 +81,52 @@
     Already have an account? <a href="{% url 'login' %}" class="text-orange" style="text-decoration:none;">Sign in</a>
   </div>
 </div>
+<script>
+(function () {
+  var form = document.getElementById('register-form');
+  if (!form) return;
+  var $ = function (id) { return document.getElementById(id); };
+
+  form.querySelectorAll('.pw-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var input = $(btn.dataset.target);
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? 'Hide' : 'Show';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
+  });
+
+  function setLive(el, ok, msg) {
+    el.textContent = msg;
+    el.className = 'field-live ' + (msg ? (ok ? 'ok' : 'bad') : '');
+  }
+
+  function checkPw1() {
+    var v = $('id_password1').value, el = $('pw1-live');
+    if (!v) { setLive(el, false, ''); return false; }
+    if (v.length < 8) { setLive(el, false, '✗ Too short (' + v.length + '/8 characters)'); return false; }
+    if (/^\d+$/.test(v)) { setLive(el, false, '✗ Password cannot be only numbers'); return false; }
+    setLive(el, true, '✓ Looks good');
+    return true;
+  }
+
+  function checkPw2() {
+    var a = $('id_password1').value, b = $('id_password2').value, el = $('pw2-live');
+    if (!b) { setLive(el, false, ''); return false; }
+    if (a !== b) { setLive(el, false, '✗ Passwords do not match'); return false; }
+    setLive(el, true, '✓ Passwords match');
+    return true;
+  }
+
+  $('id_password1').addEventListener('input', function () { checkPw1(); checkPw2(); });
+  $('id_password2').addEventListener('input', checkPw2);
+
+  form.addEventListener('submit', function (e) {
+    var ok = checkPw1();
+    ok = checkPw2() && ok;
+    if (!ok) { e.preventDefault(); (!checkPw1() ? $('id_password1') : $('id_password2')).focus(); }
+  });
+})();
+</script>
 {% endblock %}
