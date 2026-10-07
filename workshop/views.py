@@ -189,24 +189,48 @@ from .auth_utils import (
 )
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  AUTH
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
 
+    if request.method == 'POST' and request.POST.get('resend_verification'):
+        pending_id = request.session.get('pending_verification_user_id')
+        user = User.objects.filter(pk=pending_id).first() if pending_id else None
+        profile = getattr(user, 'userprofile', None)
+        if not user or not profile or profile.is_verified or not user.email:
+            messages.error(request, 'Please sign in again to request a new verification email.')
+            return redirect('login')
+        if not can_resend_verification(user):
+            messages.error(request, 'Too many verification emails requested. Please try again later.')
+            return redirect('login')
+        try:
+            send_verification_email(request, user, ttl_minutes=30)
+        except Exception:
+            logger.exception('Verification email delivery failed for user_id=%s.', user.pk)
+            messages.error(request, 'We could not send the email right now. Please try again shortly.')
+            return redirect('login')
+        request.session.pop('pending_verification_user_id', None)
+        messages.success(request, f'A new verification email was sent to {user.email}. Check your inbox and spam folder.')
+        return redirect('login')
+
     form = AuthenticationForm(request, data=request.POST or None)
+    needs_verification = False
 
     if request.method == 'POST' and form.is_valid():
         user = form.get_user()
         profile = getattr(user, 'userprofile', None)
 
         if profile and profile.role == 'customer' and not profile.is_verified:
+            request.session['pending_verification_user_id'] = user.pk
+            needs_verification = True
             form.add_error(
                 None,
-                'Please verify your email address before signing in.'
+                'Please verify your email address before signing in. '
+                'Check your inbox (and spam folder) for the verification link.'
             )
         else:
             login(request, user)
@@ -226,9 +250,9 @@ def login_view(request):
         {
             'form': form,
             'next': request.GET.get('next', ''),
+            'needs_verification': needs_verification,
         }
     )
-
 
 def register(request):
     if request.user.is_authenticated:
@@ -280,9 +304,11 @@ def register(request):
                     ttl_minutes=30
                 )
             except Exception:
+                logger.exception('Verification email delivery failed for user_id=%s.', user.pk)
                 messages.warning(
                     request,
-                    'Account created but failed to send verification email. Contact support.'
+                    'Account created, but we could not send the verification email. '
+                    'Sign in with your username and password to request a new one.'
                 )
                 return redirect('login')
 
@@ -365,7 +391,7 @@ def reset_password(request):
             {'token': token}
         )
 
-    # POST — perform reset
+    # POST â€” perform reset
     new_password = request.POST.get('password')
     confirm = request.POST.get('password_confirm')
 
@@ -420,9 +446,9 @@ def reset_password(request):
     return redirect('login')
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  API ENDPOINTS FOR REGISTRATION AND VERIFICATION
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @csrf_exempt
 @require_POST
@@ -631,9 +657,9 @@ def resend_verification(request):
         logger.exception('Verification email delivery failed.')
 
     return JsonResponse(generic_response)
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  EMPLOYEES (MECHANICS)
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def employee_list(request):
     if not request.user.is_staff:
@@ -743,9 +769,9 @@ def employee_edit(request, pk):
     return render(request, 'workshop/employee_form.html', {'form': form, 'title': 'Edit employee', 'profile': profile})
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  REPORTS
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def report(request):
     profile = getattr(request.user, 'userprofile', None)
@@ -1116,9 +1142,9 @@ def custom_500(request):
     return render(request, '500.html', status=500)
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  CUSTOMERS
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def customer_list(request):
     role = _role(request.user)
@@ -1244,9 +1270,9 @@ def customer_edit(request, pk):
     return render(request, 'workshop/customer_form.html', {'form': form, 'title': 'Edit Customer', 'customer': customer})
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  VEHICLES
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def vehicle_list(request):
     role = _role(request.user)
@@ -1340,9 +1366,9 @@ def vehicle_edit(request, pk):
     return render(request, 'workshop/vehicle_form.html', {'form': form, 'title': 'Edit Vehicle', 'vehicle': vehicle})
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  REPAIR ORDERS
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def repair_order_list(request):
     status = request.GET.get('status', '')
@@ -1989,9 +2015,9 @@ def add_parts_line(request, ro_pk):
     return render(request, 'workshop/line_item_form.html', {'form': form, 'order': order, 'title': 'Add Parts Line'})
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  INVOICES
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def invoice_list(request):
     profile = getattr(request.user, 'userprofile', None)
@@ -2434,9 +2460,9 @@ def get_or_update_appointment_repair_order(appointment, **kwargs):
     return repair_order
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  APPOINTMENTS
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def appointment_list(request):
     appointments = Appointment.objects.select_related('customer', 'vehicle').order_by('date_time', 'pk')
@@ -2762,9 +2788,9 @@ def appointment_decision(request, pk, action):
     return redirect('dashboard')
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  PARTS INVENTORY
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def parts_list(request):
     if not (_is_admin(request.user) or _role(request.user) == 'mechanic'):
@@ -2827,9 +2853,9 @@ def part_edit(request, pk):
     return render(request, 'workshop/part_form.html', {'form': form, 'title': 'Edit Part', 'part': part})
 
 
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #  SERVICE CATALOGUE
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @login_required
 def service_list(request):
     services = ServiceItem.objects.all()

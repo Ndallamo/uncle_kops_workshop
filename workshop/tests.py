@@ -866,6 +866,34 @@ class WorkflowAdminGuardTests(TestCase):
         )
 
 class RegistrationTests(TestCase):
+    @patch('workshop.views.send_verification_email', side_effect=RuntimeError('smtp down'))
+    def test_registration_survives_email_failure_and_unverified_user_can_resend(self, mocked_send):
+        self.client.post(reverse('register'), {
+            'username': 'mailfail',
+            'email': 'mailfail@example.com',
+            'first_name': 'Mail',
+            'last_name': 'Fail',
+            'role': 'customer',
+            'password1': 'A-strong-pass-123',
+            'password2': 'A-strong-pass-123',
+        })
+        self.assertTrue(User.objects.filter(username='mailfail').exists())
+
+        mocked_send.side_effect = None
+        response = self.client.post(reverse('login'), {'username': 'mailfail', 'password': 'A-strong-pass-123'})
+        self.assertContains(response, 'Resend verification email')
+
+        mocked_send.reset_mock()
+        response = self.client.post(reverse('login'), {'resend_verification': '1'})
+        self.assertRedirects(response, reverse('login'))
+        mocked_send.assert_called_once()
+
+    @patch('workshop.views.send_verification_email')
+    def test_resend_without_pending_login_sends_nothing(self, mocked_send):
+        response = self.client.post(reverse('login'), {'resend_verification': '1'})
+        self.assertRedirects(response, reverse('login'))
+        mocked_send.assert_not_called()
+
     @patch('workshop.views.send_verification_email')
     def test_invalid_registration_saves_nothing(self, send_verification_email):
         base = {

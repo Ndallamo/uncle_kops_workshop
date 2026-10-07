@@ -32,6 +32,14 @@
         Sign In →
       </button>
     </form>
+    {% if needs_verification %}
+    <form method="post" style="margin-top:12px;">
+      {% csrf_token %}
+      <button type="submit" name="resend_verification" value="1" class="btn" style="width:100%; justify-content:center; padding:12px;">
+        Resend verification email
+      </button>
+    </form>
+    {% endif %}
   </div>
   <div style="text-align:center; margin-top:12px;">
     <a href="{% url 'forgot_password' %}" class="text-link">Forgot password?</a>
