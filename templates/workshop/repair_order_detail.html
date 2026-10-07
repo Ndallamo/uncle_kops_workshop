@@ -88,6 +88,8 @@
         <div class="alert alert-success">You approved this repair estimate. The workshop can continue with the authorised work.</div>
         {% elif customer_decision_locked %}
         <div class="alert alert-info">This repair order has already moved forward (an invoice or logged work exists), so the estimate can no longer be approved or declined here. Contact the workshop if you have questions about the charges.</div>
+        {% elif not has_estimate_lines %}
+        <div class="alert alert-info">No estimate has been prepared for this repair yet. You can approve or decline once the workshop has sent one.</div>
         {% else %}
         <div class="alert alert-warning">This repair estimate is awaiting your approval before the workshop proceeds.</div>
         <form method="post" action="{% url 'repair_order_customer_decision' order.pk 'approve' %}" style="display:inline; margin-right:8px;" onsubmit="return confirm('Approve this estimate and authorize the proposed work?');">

@@ -33,6 +33,16 @@
           <td>{{ a.get_assignment_status_display }}</td>
           <td>
             <a href="{% url 'appointment_edit' a.pk %}" class="btn btn-secondary btn-sm">Edit</a>
+            {% if request.user.userprofile.role == 'customer' %}
+              {% if a.can_delete %}
+              <form method="post" action="{% url 'appointment_delete' a.pk %}" style="display:inline" onsubmit="return confirm('Delete this service request? Use this only if it was submitted by mistake or is a duplicate.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              </form>
+              {% else %}
+              <span class="text-muted" style="font-size:12px;">Work started</span>
+              {% endif %}
+            {% endif %}
             {% if request.user.userprofile.role == 'mechanic' and a.assigned_mechanic_id == request.user.id and a.assignment_status == 'pending' %}
               <form method="post" action="{% url 'appointment_decision' a.pk 'accept' %}" style="display:inline">
                 {% csrf_token %}

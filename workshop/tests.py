@@ -17,6 +17,20 @@ from workshop.auth_utils import send_invoice_ready_email, send_password_reset_em
 from workshop.currency import format_rand
 
 
+def add_estimate_line(order, created_by=None):
+    if created_by is None:
+        created_by, _ = User.objects.get_or_create(username='estimate-helper')
+    service = ServiceItem.objects.create(name=f'Estimate service {order.pk}', labor_hours=1, labor_rate=250)
+    return RepairEstimateLine.objects.create(
+        repair_order=order,
+        line_type='labor',
+        service_item=service,
+        quantity=1,
+        unit_price=250,
+        created_by=created_by,
+    )
+
+
 class InvoiceFormTests(TestCase):
     def test_invoice_form_includes_service_amount_field(self):
         form = InvoiceForm()
@@ -865,6 +879,62 @@ class WorkflowAdminGuardTests(TestCase):
             403,
         )
 
+class AppointmentDeleteTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('delcust', 'delcust@example.com', 'pw-12345-xyz')
+        UserProfile.objects.create(user=self.user, role='customer', is_verified=True)
+        self.customer = Customer.objects.create(first_name='Del', last_name='Cust', email='delcust@example.com', phone='1', address='x')
+        self.vehicle = Vehicle.objects.create(customer=self.customer, make='Toyota', model='Corolla', year=2020)
+        self.other_user = User.objects.create_user('other', 'other@example.com', 'pw-12345-xyz')
+        UserProfile.objects.create(user=self.other_user, role='customer', is_verified=True)
+        self.other_customer = Customer.objects.create(first_name='Oth', last_name='Er', email='other@example.com', phone='2', address='y')
+
+    def _request(self, customer=None, vehicle=None):
+        vehicle = vehicle or self.vehicle
+        order = RepairOrder.objects.create(vehicle=vehicle, description='Duplicate', status='pending')
+        appt = Appointment.objects.create(
+            customer=customer or self.customer, vehicle=vehicle, repair_order=order,
+            date_time=timezone.now() + timedelta(days=1), service_desc='Duplicate',
+        )
+        return appt, order
+
+    def test_customer_can_delete_duplicate_request(self):
+        appt, order = self._request()
+        self.client.force_login(self.user)
+        page = self.client.get(reverse('appointment_list'))
+        self.assertContains(page, reverse('appointment_delete', args=[appt.pk]))
+        response = self.client.post(reverse('appointment_delete', args=[appt.pk]))
+        self.assertRedirects(response, reverse('appointment_list'))
+        self.assertFalse(Appointment.objects.filter(pk=appt.pk).exists())
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'cancelled')
+        self.assertTrue(AuditLog.objects.filter(action='appointment_deleted', object_id=appt.pk).exists())
+
+    def test_cannot_delete_once_work_has_started(self):
+        appt, order = self._request()
+        add_estimate_line(order)
+        self.client.force_login(self.user)
+        page = self.client.get(reverse('appointment_list'))
+        self.assertNotContains(page, reverse('appointment_delete', args=[appt.pk]))
+        self.client.post(reverse('appointment_delete', args=[appt.pk]))
+        self.assertTrue(Appointment.objects.filter(pk=appt.pk).exists())
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'pending')
+
+    def test_customer_cannot_delete_someone_elses_request(self):
+        other_vehicle = Vehicle.objects.create(customer=self.other_customer, make='Ford', model='Fiesta', year=2018)
+        appt, _ = self._request(customer=self.other_customer, vehicle=other_vehicle)
+        self.client.force_login(self.user)
+        response = self.client.post(reverse('appointment_delete', args=[appt.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Appointment.objects.filter(pk=appt.pk).exists())
+
+    def test_delete_requires_post(self):
+        appt, _ = self._request()
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(reverse('appointment_delete', args=[appt.pk])).status_code, 405)
+
+
 class RegistrationTests(TestCase):
     @patch('workshop.views.send_verification_email', side_effect=RuntimeError('smtp down'))
     def test_registration_survives_email_failure_and_unverified_user_can_resend(self, mocked_send):
@@ -1641,6 +1711,7 @@ class RoleBoundaryTests(TestCase):
             vehicle=vehicle,
             description='Timeline test repair',
         )
+        add_estimate_line(order, self.mechanic)
         self.client.force_login(self.customer_user)
 
         response = self.client.post(
@@ -1654,12 +1725,12 @@ class RoleBoundaryTests(TestCase):
         self.assertEqual(event.metadata, {
             'approved': True,
             'estimate_version': 1,
-            'estimate_total': '0.00',
+            'estimate_total': '250.00',
         })
         estimate = RepairEstimate.objects.get(repair_order=order, version=1)
         self.assertEqual(estimate.status, 'approved')
         self.assertEqual(estimate.decided_by, self.customer_user)
-        self.assertEqual(estimate.total_amount, order.grand_total)
+        self.assertEqual(estimate.total_amount, 250)
 
         detail = self.client.get(reverse('repair_order_detail', args=[order.pk]))
         self.assertContains(detail, 'Customer approval recorded')
@@ -1696,6 +1767,30 @@ class RoleBoundaryTests(TestCase):
         self.assertTrue(order.approved)
         estimate = RepairEstimate.objects.get(repair_order=order, status='approved')
         self.assertEqual(estimate.total_amount, 250)
+
+    def test_customer_cannot_approve_or_decline_without_an_estimate(self):
+        vehicle = Vehicle.objects.create(customer=self.customer, make='Toyota', model='Corolla', year=2020)
+        order = RepairOrder.objects.create(vehicle=vehicle, description='No estimate yet')
+        self.client.force_login(self.customer_user)
+
+        detail = self.client.get(reverse('repair_order_detail', args=[order.pk]))
+        self.assertContains(detail, 'No estimate has been prepared')
+        self.assertNotContains(detail, 'Approve</button>')
+        self.assertNotContains(detail, 'Decline</button>')
+        dashboard = self.client.get(reverse('dashboard'))
+        self.assertNotIn(order, list(dashboard.context['pending_approval']))
+
+        for action in ('approve', 'decline'):
+            response = self.client.post(reverse('repair_order_customer_decision', args=[order.pk, action]))
+            self.assertRedirects(response, reverse('repair_order_detail', args=[order.pk]))
+            order.refresh_from_db()
+            self.assertFalse(order.approved)
+            self.assertFalse(RepairEstimate.objects.filter(repair_order=order).exclude(status='pending').exists())
+
+        add_estimate_line(order, self.mechanic)
+        detail = self.client.get(reverse('repair_order_detail', args=[order.pk]))
+        self.assertContains(detail, 'Approve</button>')
+        self.assertContains(detail, 'Decline</button>')
 
     def test_customer_cannot_approve_after_work_is_logged(self):
         vehicle = Vehicle.objects.create(
@@ -2414,6 +2509,7 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(self.order.status, 'pending')
         self.assertEqual(self.order.pending_status, 'in_progress')
 
+        add_estimate_line(self.order, self.mechanic)
         self.client.force_login(customer_user)
         customer_approval = self.client.post(
             reverse('repair_order_customer_decision', args=[self.order.pk, 'approve']),
@@ -3142,6 +3238,7 @@ class NavigationGuidanceTests(TestCase):
             description='Engine service',
             approved=False,
         )
+        add_estimate_line(order)
         self.client.force_login(self.customer_user)
 
         approve_response = self.client.post(reverse('repair_order_customer_decision', args=[order.pk, 'approve']))
@@ -3159,6 +3256,7 @@ class NavigationGuidanceTests(TestCase):
             description='Transmission service',
             approved=False,
         )
+        add_estimate_line(decline_order)
         decline_before_approval = self.client.post(
             reverse('repair_order_customer_decision', args=[decline_order.pk, 'decline']),
         )

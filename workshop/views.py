@@ -1039,7 +1039,7 @@ def dashboard(request):
                 is_read=False,
             )[:5]
             repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).exclude(status='cancelled').order_by('-date_created')
-            pending_approval = repair_orders.filter(approved=False).order_by('-date_created')
+            pending_approval = repair_orders.filter(approved=False, estimate_lines__isnull=False).distinct().order_by('-date_created')
 
             for order in repair_orders[:3]:
                 if order.status == 'pending':
@@ -1458,6 +1458,7 @@ def repair_order_detail(request, pk):
     status_choices = _mechanic_status_choices(order) if is_mechanic else RepairOrder.STATUS_CHOICES
     # Mirrors the blocking rule in repair_order_customer_decision so the UI never
     # offers an approve/decline action the backend will silently refuse.
+    has_estimate_lines = estimate_lines.exists()
     customer_decision_locked = (
         order.status not in {'pending', 'in_progress', 'waiting'}
         or invoice is not None
@@ -1480,6 +1481,7 @@ def repair_order_detail(request, pk):
         'estimate_lines': estimate_lines,
         'estimate_line_form': RepairEstimateLineForm() if is_admin or is_mechanic else None,
         'customer_decision_locked': customer_decision_locked,
+        'has_estimate_lines': has_estimate_lines,
     })
 
 
@@ -1701,6 +1703,9 @@ def repair_order_customer_decision(request, pk, action):
 
     if order.approved:
         messages.info(request, f'You have already approved the estimate for RO#{order.pk}. Contact the workshop if you need to discuss a change.')
+        return redirect('repair_order_detail', pk=order.pk)
+    if not order.estimate_lines.exists():
+        messages.error(request, 'No estimate has been prepared for this repair yet. You can approve or decline once the workshop has sent one.')
         return redirect('repair_order_detail', pk=order.pk)
     approval_window_statuses = {'pending', 'in_progress', 'waiting'}
     if (
@@ -2497,6 +2502,9 @@ def appointment_list(request):
     if end_date:
         appointments = _filter_datetime_date_range(appointments, 'date_time', None, end_date)
     appointments = Paginator(appointments, 25).get_page(request.GET.get('page'))
+    if _role(request.user) == 'customer':
+        for appointment in appointments:
+            appointment.can_delete = customer_can_delete_appointment(appointment)
     return render(request, 'workshop/appointment_list.html', {
         'appointments': appointments,
         'q': query,
@@ -2724,6 +2732,78 @@ def appointment_edit(request, pk):
         messages.success(request, "Appointment updated.")
         return redirect('appointment_list')
     return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
+
+
+def customer_can_delete_appointment(appt):
+    order = appt.repair_order
+    if order is None:
+        return True
+    return (
+        order.status == 'pending'
+        and not order.approved
+        and not order.estimate_lines.exists()
+        and not order.labor_lines.exists()
+        and not order.parts_lines.exists()
+        and not Invoice.objects.filter(repair_order=order).exists()
+    )
+
+
+@login_required
+@require_POST
+@transaction.atomic
+def appointment_delete(request, pk):
+    if _role(request.user) != 'customer':
+        messages.error(request, 'Only customers can delete their own service requests.')
+        return redirect('appointment_list')
+
+    customer = Customer.objects.filter(email=request.user.email).first()
+    appt = get_object_or_404(
+        Appointment.objects.select_for_update().select_related('repair_order'),
+        pk=pk,
+        customer=customer,
+    ) if customer else None
+    if appt is None:
+        messages.error(request, 'Service request not found.')
+        return redirect('appointment_list')
+
+    if not customer_can_delete_appointment(appt):
+        messages.error(
+            request,
+            'This service request can no longer be deleted because the workshop has already started on it. '
+            'Please contact the workshop.'
+        )
+        return redirect('appointment_list')
+
+    order = appt.repair_order
+    record_audit_entry(
+        request.user,
+        'appointment_deleted',
+        appt,
+        repair_order=order,
+        details={
+            'date_time': appt.date_time.isoformat(),
+            'repair_order_id': order.pk if order else None,
+        },
+    )
+    appt.delete()
+
+    if order and not order.appointments.exists() and order.status != 'cancelled':
+        previous_status = order.status
+        order.status = 'cancelled'
+        order.pending_status = ''
+        order.save(update_fields=['status', 'pending_status', 'date_updated'])
+        record_repair_event(
+            order,
+            request.user,
+            'cancelled',
+            previous_status=previous_status,
+            current_status=order.status,
+            customer_visible=True,
+            note='Customer deleted the service request.',
+        )
+
+    messages.success(request, 'Your service request has been deleted.')
+    return redirect('appointment_list')
 
 
 @login_required
