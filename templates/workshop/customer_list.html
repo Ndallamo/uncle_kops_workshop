@@ -10,9 +10,17 @@
   <form method="get" class="flex gap-2" style="flex-wrap:wrap; align-items:flex-end;">
     <div style="flex:1; min-width:220px;">
       <label for="search_query" style="display:block; font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px;">Find customers quickly</label>
-      <input id="search_query" name="q" value="{{ q }}" placeholder="Search by name, email, phone…" style="width:100%; max-width:100%;">
+      <input id="search_query" name="q" value="{{ q }}" placeholder="Search by name or email…" style="width:100%; max-width:100%;">
       {% if q %}<div class="context-note">Showing results for “{{ q }}”. <a href="{% url 'customer_list' %}" style="color:var(--orange2); text-decoration:underline;">Clear search</a></div>{% endif %}
     </div>
+    <label for="customer-sort">Sort by
+      <select id="customer-sort" name="sort">
+        <option value="name" {% if sort == 'name' %}selected{% endif %}>Name A to Z</option>
+        <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Name Z to A</option>
+        <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest</option>
+        <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Oldest</option>
+      </select>
+    </label>
     <button type="submit" class="btn btn-primary">Search</button>
     {% if q %}<a href="{% url 'customer_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
   </form>
@@ -22,7 +30,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Name</th><th>Email</th><th>Phone</th><th>Vehicles</th><th>Since</th><th>Actions</th></tr>
+        <tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Vehicles</th><th>Since</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for c in customers %}
@@ -30,6 +38,7 @@
           <td><a href="{% url 'customer_detail' c.pk %}" class="text-orange fw-600">{{ c.full_name }}</a></td>
           <td>{{ c.email }}</td>
           <td>{{ c.phone }}</td>
+          <td>{{ c.address|default:'Not provided' }}</td>
           <td>{{ c.vehicle_count }}</td>
           <td class="text-muted">{{ c.created_at|date:"d M Y" }}</td>
           <td>
@@ -37,10 +46,23 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-muted">No customers found.</td></tr>
+        <tr><td colspan="7"><div class="empty-state">
+          {% if q %}
+          <strong>No customers match “{{ q }}”</strong><span>Try another name or email address.</span><a href="{% url 'customer_list' %}" class="btn btn-secondary btn-sm">Clear search</a>
+          {% else %}
+          <strong>No customers yet</strong><span>Customer records keep contact details, vehicles, and service history together.</span><a href="{% url 'customer_create' %}" class="btn btn-primary btn-sm">Add first customer</a>
+          {% endif %}
+        </div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if customers.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between" style="margin-top:16px;">
+  {% if customers.has_previous %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&sort={{ sort|urlencode }}&page={{ customers.previous_page_number }}">Previous</a>{% else %}<span></span>{% endif %}
+  <span class="text-muted">Page {{ customers.number }} of {{ customers.paginator.num_pages }}</span>
+  {% if customers.has_next %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&sort={{ sort|urlencode }}&page={{ customers.next_page_number }}">Next</a>{% else %}<span></span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

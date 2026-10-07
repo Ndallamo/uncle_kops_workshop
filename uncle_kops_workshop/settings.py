@@ -3,6 +3,8 @@ Django settings for Uncle Kop's Workshop
 """
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
+from django.core.exceptions import ImproperlyConfigured
 
 try:
     from dotenv import load_dotenv
@@ -29,11 +31,42 @@ if ENV_FILE.exists():
             key, value = line.split('=', 1)
             os.environ.setdefault(key.strip(), value.strip().strip('"\''))
 
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-CHANGE-THIS-IN-PRODUCTION-uncle-kops-2024')
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() in ('1', 'true', 'yes', 'on')
 
-DEBUG = True  # Set to False in production
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-local-development-only'
+    else:
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is disabled.')
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.15.68']
+if DEBUG:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.14.182']
+else:
+    ALLOWED_HOSTS = [
+        host.strip()
+        for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+        if host.strip()
+    ]
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS must list the production hostnames.')
+
+PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
+if not DEBUG and not PUBLIC_BASE_URL:
+    raise ImproperlyConfigured('PUBLIC_BASE_URL must be set to the public application origin in production.')
+if PUBLIC_BASE_URL:
+    parsed_public_url = urlsplit(PUBLIC_BASE_URL)
+    if (
+        parsed_public_url.scheme not in {'http', 'https'}
+        or not parsed_public_url.netloc
+        or parsed_public_url.username
+        or parsed_public_url.password
+        or parsed_public_url.query
+        or parsed_public_url.fragment
+    ):
+        raise ImproperlyConfigured('PUBLIC_BASE_URL must be an absolute HTTP(S) URL without credentials, query, or fragment.')
+    if not DEBUG and parsed_public_url.scheme != 'https':
+        raise ImproperlyConfigured('PUBLIC_BASE_URL must use HTTPS when DJANGO_DEBUG is disabled.')
 
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
@@ -51,6 +84,7 @@ else:
 
 # Encryption key for AES-256-GCM (set from env in production). Base64-encoded 32 bytes.
 import base64
+import binascii
 import secrets
 
 # ENCRYPTION_KEY should be a base64-encoded 32-byte key (AES-256). In production
@@ -72,7 +106,14 @@ if not ENCRYPTION_KEY:
             # Fallback to empty string if filesystem not writable; models will raise clearly.
             ENCRYPTION_KEY = ''
     else:
-        ENCRYPTION_KEY = ''  # production requires explicit env var
+        raise ImproperlyConfigured('ENCRYPTION_KEY must be set when DJANGO_DEBUG is disabled.')
+
+try:
+    decoded_encryption_key = base64.b64decode(ENCRYPTION_KEY, validate=True)
+except (binascii.Error, ValueError) as exc:
+    raise ImproperlyConfigured('ENCRYPTION_KEY must be valid base64.') from exc
+if len(decoded_encryption_key) != 32:
+    raise ImproperlyConfigured('ENCRYPTION_KEY must decode to exactly 32 bytes.')
 
 # Use Argon2id for password hashing when available
 PASSWORD_HASHERS = [
@@ -99,6 +140,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'workshop.middleware.CustomerProfileCompletionMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -122,18 +164,46 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'uncle_kops_workshop.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'uncle_kops_db',
-        'USER': 'django_user',
-        'PASSWORD': 'UncleKops2024!',
-        'HOST': '192.168.14.132',
-        'PORT': '3306',
-    }
-    
-}
+try:
+    DB_CONN_MAX_AGE = int(os.environ.get('DB_CONN_MAX_AGE', '0' if DEBUG else '60'))
+except ValueError as exc:
+    raise ImproperlyConfigured('DB_CONN_MAX_AGE must be a non-negative integer.') from exc
+if DB_CONN_MAX_AGE < 0:
+    raise ImproperlyConfigured('DB_CONN_MAX_AGE must be a non-negative integer.')
 
+if DEBUG:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ.get('DB_NAME', 'uncle_kops_db'),
+            'USER': os.environ.get('DB_USER', 'django_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+            'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+            'PORT': os.environ.get('DB_PORT', '3306'),
+            'CONN_MAX_AGE': DB_CONN_MAX_AGE,
+            'CONN_HEALTH_CHECKS': True,
+        }
+    }
+else:
+    database_variables = ('DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST')
+    missing_database_variables = [name for name in database_variables if not os.environ.get(name)]
+    if missing_database_variables:
+        raise ImproperlyConfigured(
+            'Set the production database variables: ' + ', '.join(missing_database_variables)
+        )
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ['DB_NAME'],
+            'USER': os.environ['DB_USER'],
+            'PASSWORD': os.environ['DB_PASSWORD'],
+            'HOST': os.environ['DB_HOST'],
+            'PORT': os.environ.get('DB_PORT', '3306'),
+            'OPTIONS': {'charset': 'utf8mb4'},
+            'CONN_MAX_AGE': DB_CONN_MAX_AGE,
+            'CONN_HEALTH_CHECKS': True,
+        }
+    }
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -195,6 +265,25 @@ elif EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and not EMAIL_HOST_USER.startswith(
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+DJANGO_LOG_LEVEL = os.environ.get('DJANGO_LOG_LEVEL', 'WARNING' if DEBUG else 'INFO').upper()
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {'format': '%(asctime)s %(levelname)s %(name)s %(message)s'},
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'loggers': {
+        'django': {'handlers': ['console'], 'level': DJANGO_LOG_LEVEL, 'propagate': False},
+        'workshop': {'handlers': ['console'], 'level': DJANGO_LOG_LEVEL, 'propagate': False},
+    },
+}
 
 # Security recommendations to enable in production
 # SECURE_SSL_REDIRECT = True

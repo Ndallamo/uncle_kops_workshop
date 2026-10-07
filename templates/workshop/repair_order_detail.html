@@ -1,10 +1,11 @@
 {% extends "workshop/base.html" %}
+{% load user_extras %}
 {% block title %}RO #{{ order.pk }}{% endblock %}
 {% block page_title %}Repair Order #{{ order.pk }}{% endblock %}
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
     <a href="{% url 'repair_order_edit' order.pk %}" class="btn btn-secondary btn-sm">Edit RO</a>
-    {% if not is_customer %}
+    {% if is_admin %}
       <a href="{% url 'invoice_create' %}?ro={{ order.pk }}" class="btn btn-primary btn-sm">Create invoice</a>
     {% endif %}
     <a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">← All ROs</a>
@@ -49,25 +50,175 @@
         </div>
       </div>
 
+      {% if is_mechanic %}
+      <div id="status-update" style="margin-top:16px;">
+        {% if order.pending_status %}
+        <div class="alert alert-info">Your proposed status, <strong>{{ order.get_pending_status_display }}</strong>, is awaiting admin approval. Customers will see the current status until it is approved.</div>
+        {% elif not status_choices %}
+        <div class="alert alert-info">No mechanic status updates are available. An admin will handle repair finalization.</div>
+        {% else %}
+        <form method="post" action="{% url 'repair_order_status_proposal' order.pk %}" class="flex items-center gap-2" style="flex-wrap:wrap;">
+          {% csrf_token %}
+          <div class="form-group" style="flex:1; min-width:200px;">
+            <label for="proposed-status">Propose status change</label>
+            <select id="proposed-status" name="status" required>
+              <option value="">Choose a status</option>
+              {% for value, label in status_choices %}
+                {% if value != order.status %}<option value="{{ value }}">{{ label }}</option>{% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">Submit for admin approval</button>
+        </form>
+        {% endif %}
+      </div>
+      {% elif is_customer %}
+      <div style="margin-top:16px;">
+        {% if order.status == 'ready' %}
+        <div class="alert alert-success">Your vehicle is ready for pickup. Please arrange collection and the workshop will close the job once the final invoice is settled.</div>
+        {% if invoice and invoice.payment_status == 'paid' %}
+        <form method="post" action="{% url 'repair_order_customer_decision' order.pk 'collect' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-primary">Confirm pickup</button>
+        </form>
+        {% else %}
+        <div class="alert alert-warning" style="margin-top:12px;">Payment must be completed before the repair can be marked as collected.</div>
+        {% endif %}
+        {% elif order.approved %}
+        <div class="alert alert-success">You approved this repair estimate. The workshop can continue with the authorised work.</div>
+        {% elif customer_decision_locked %}
+        <div class="alert alert-info">This repair order has already moved forward (an invoice or logged work exists), so the estimate can no longer be approved or declined here. Contact the workshop if you have questions about the charges.</div>
+        {% else %}
+        <div class="alert alert-warning">This repair estimate is awaiting your approval before the workshop proceeds.</div>
+        <form method="post" action="{% url 'repair_order_customer_decision' order.pk 'approve' %}" style="display:inline; margin-right:8px;" onsubmit="return confirm('Approve this estimate and authorize the proposed work?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-primary">Approve</button>
+        </form>
+        <form method="post" action="{% url 'repair_order_customer_decision' order.pk 'decline' %}" style="display:inline;" onsubmit="return confirm('Decline this estimate? The workshop will review the next steps.');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-secondary">Decline</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <div style="margin-top:16px;">
         <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Description / Complaint</div>
         <p style="font-size:14px; line-height:1.6;">{{ order.description }}</p>
       </div>
 
-      {% if order.internal_notes %}
+      {% if order.internal_notes and not is_customer %}
       <div style="margin-top:16px; padding:12px; background:rgba(245,158,11,.05); border-radius:8px; border-left:3px solid var(--yellow);">
         <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Internal Notes</div>
         <p style="font-size:14px; line-height:1.6;">{{ order.internal_notes }}</p>
       </div>
       {% endif %}
+
+      {% if estimate %}
+      <div style="margin-top:16px; padding:12px; background:rgba(59,130,246,.05); border-radius:8px; border-left:3px solid var(--blue);">
+        <div class="flex items-center justify-between gap-2" style="flex-wrap:wrap;">
+          <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px;">Estimate v{{ estimate.version }}</div>
+          <span class="badge badge-blue">{{ estimate.get_status_display }}</span>
+        </div>
+        <div class="flex justify-between" style="margin-top:8px;"><span>Labor</span><strong>{{ estimate.labor_amount|zar }}</strong></div>
+        <div class="flex justify-between"><span>Parts</span><strong>{{ estimate.parts_amount|zar }}</strong></div>
+        <div class="flex justify-between"><span>Total</span><strong class="text-orange">{{ estimate.total_amount|zar }}</strong></div>
+        <div style="margin-top:10px;">
+          {% for line in estimate_lines %}
+          <div class="text-muted" style="font-size:12px;">{{ line.get_line_type_display }}: {% if line.service_item %}{{ line.service_item.name }}{% else %}{{ line.part.name }}{% endif %} × {{ line.quantity }} = {{ line.line_total|zar }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% if estimate_line_form and not order.approved %}
+      <form method="post" action="{% url 'repair_estimate_line_add' order.pk %}" style="margin-top:16px;">
+        {% csrf_token %}
+        {{ estimate_line_form.non_field_errors }}
+        {% for field in estimate_line_form %}
+          {% if field.is_hidden %}
+            {{ field }}
+          {% else %}
+            <div class="form-group">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% for error in field.errors %}
+                <div class="alert alert-error">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Add estimate line</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-title">Repair Timeline</div>
+      <div style="display:flex; flex-direction:column; gap:14px;">
+        {% for event in events %}
+        <div style="border-left:2px solid var(--orange); padding-left:12px;">
+          <div class="flex items-center justify-between gap-2" style="flex-wrap:wrap;">
+            <strong>{{ event.get_event_type_display }}</strong>
+            <span class="text-muted" style="font-size:12px;">{{ event.created_at|date:"d M Y H:i" }}</span>
+          </div>
+          {% if event.previous_status or event.current_status %}
+          <div class="text-muted" style="font-size:12px; margin-top:3px;">{{ event.previous_status|default:'-' }} → {{ event.current_status|default:'-' }}</div>
+          {% endif %}
+          {% if event.note %}<div style="font-size:13px; margin-top:5px;">{{ event.note }}</div>{% endif %}
+          {% if not is_customer and event.actor %}<div class="text-muted" style="font-size:11px; margin-top:4px;">Recorded by {{ event.actor.get_full_name|default:event.actor.username }}</div>{% endif %}
+        </div>
+        {% empty %}
+        <div class="empty-state"><strong>No timeline events yet</strong><span>Repair progress will appear here as the workshop updates this order.</span></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-title">Repair Documents</div>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+        {% for document in documents %}
+        <div class="flex items-center justify-between gap-2" style="flex-wrap:wrap;">
+          <span>{{ document.title }} <span class="text-muted" style="font-size:11px;">{{ document.uploaded_at|date:"d M Y H:i" }}</span></span>
+          <a href="{% url 'repair_document_download' document.pk %}" class="btn btn-secondary btn-sm">Download</a>
+        </div>
+        {% empty %}
+        <div class="empty-state"><strong>No documents uploaded</strong><span>Inspection photos and approved repair documents will appear here.</span></div>
+        {% endfor %}
+      </div>
+      {% if document_form %}
+      <form method="post" enctype="multipart/form-data" action="{% url 'repair_document_upload' order.pk %}" style="margin-top:16px;">
+        {% csrf_token %}
+        {{ document_form.non_field_errors }}
+        {% for field in document_form %}
+          {% if field.is_hidden %}
+            {{ field }}
+          {% else %}
+            <div class="form-group">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% for error in field.errors %}
+                <div class="alert alert-error">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Upload document</button>
+      </form>
+      {% endif %}
     </div>
 
     {% if not is_customer %}
     <!-- Labor Lines -->
-    <div class="card mb-4">
+    <div class="card mb-4" id="work-lines">
       <div class="flex items-center justify-between mb-4">
         <div class="card-title">Labor</div>
-        <a href="{% url 'add_labor_line' order.pk %}" class="btn btn-primary btn-sm">+ Add Labor</a>
+        {% if invoice %}
+          <span class="text-muted">Locked after invoice creation</span>
+        {% elif not order.approved %}
+          <span class="text-muted">Available after customer approval</span>
+        {% else %}
+          <a href="{% url 'add_labor_line' order.pk %}" class="btn btn-primary btn-sm">+ Add Labor</a>
+        {% endif %}
       </div>
       <table>
         <thead><tr><th>Service</th><th>Hours</th><th>Rate (R)</th><th>Total (R)</th></tr></thead>
@@ -76,8 +227,8 @@
           <tr>
             <td>{{ line.service_item.name }}</td>
             <td>{{ line.hours }}</td>
-            <td>{{ line.rate }}</td>
-            <td class="fw-600">R {{ line.line_total }}</td>
+            <td>{{ line.rate|zar }}</td>
+            <td class="fw-600">{{ line.line_total|zar }}</td>
           </tr>
           {% empty %}
           <tr><td colspan="4" class="text-muted">No labor lines added.</td></tr>
@@ -85,7 +236,7 @@
           {% if labor_lines %}
           <tr style="background:rgba(255,255,255,.03);">
             <td colspan="3" class="fw-600" style="text-align:right;">Labor Total</td>
-            <td class="fw-600 text-orange">R {{ order.total_labor }}</td>
+            <td class="fw-600 text-orange">{{ order.total_labor|zar }}</td>
           </tr>
           {% endif %}
         </tbody>
@@ -96,7 +247,13 @@
     <div class="card">
       <div class="flex items-center justify-between mb-4">
         <div class="card-title">Parts</div>
-        <a href="{% url 'add_parts_line' order.pk %}" class="btn btn-primary btn-sm">+ Add Part</a>
+        {% if invoice %}
+          <span class="text-muted">Locked after invoice creation</span>
+        {% elif not order.approved %}
+          <span class="text-muted">Available after customer approval</span>
+        {% else %}
+          <a href="{% url 'add_parts_line' order.pk %}" class="btn btn-primary btn-sm">+ Add Part</a>
+        {% endif %}
       </div>
       <table>
         <thead><tr><th>Part</th><th>Qty</th><th>Unit Price (R)</th><th>Total (R)</th></tr></thead>
@@ -105,8 +262,8 @@
           <tr>
             <td>{{ line.part.name }}</td>
             <td>{{ line.quantity }}</td>
-            <td>{{ line.unit_price }}</td>
-            <td class="fw-600">R {{ line.line_total }}</td>
+            <td>{{ line.unit_price|zar }}</td>
+            <td class="fw-600">{{ line.line_total|zar }}</td>
           </tr>
           {% empty %}
           <tr><td colspan="4" class="text-muted">No parts added.</td></tr>
@@ -114,7 +271,7 @@
           {% if parts_lines %}
           <tr style="background:rgba(255,255,255,.03);">
             <td colspan="3" class="fw-600" style="text-align:right;">Parts Total</td>
-            <td class="fw-600 text-orange">R {{ order.total_parts }}</td>
+            <td class="fw-600 text-orange">{{ order.total_parts|zar }}</td>
           </tr>
           {% endif %}
         </tbody>
@@ -131,24 +288,46 @@
       <div style="display:flex; flex-direction:column; gap:12px;">
         <div class="flex justify-between">
           <span class="text-muted">Labor</span>
-          <span class="fw-600">R {{ order.total_labor }}</span>
+          <span class="fw-600">{{ order.total_labor|zar }}</span>
         </div>
         <div class="flex justify-between">
           <span class="text-muted">Parts</span>
-          <span class="fw-600">R {{ order.total_parts }}</span>
+          <span class="fw-600">{{ order.total_parts|zar }}</span>
         </div>
         <div style="height:1px; background:var(--border);"></div>
         <div class="flex justify-between">
           <span class="fw-600" style="font-size:16px;">Grand Total</span>
-          <span class="fw-600 text-orange" style="font-size:18px;">R {{ order.grand_total }}</span>
+          <span class="fw-600 text-orange" style="font-size:18px;">{{ order.grand_total|zar }}</span>
         </div>
       </div>
 
-      <div style="margin-top:20px;">
+      {% if is_admin %}
+      <div style="margin-top:20px; display:flex; flex-direction:column; gap:10px;">
+        {% if order.status != 'completed' %}
+          {% if order.status != 'ready' %}
+          <form method="post" action="{% url 'repair_order_finalize' order.pk 'ready' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary" style="width:100%; justify-content:center;">Ready for pickup</button>
+          </form>
+          {% endif %}
+          {% if invoice and invoice.payment_status == 'paid' %}
+          <form method="post" action="{% url 'repair_order_finalize' order.pk 'complete' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Mark as completed</button>
+          </form>
+          {% else %}
+          <div class="alert alert-warning" style="margin:0;">Complete only after the invoice has been fully paid.</div>
+          {% endif %}
+        {% endif %}
+        <form method="post" action="{% url 'repair_order_cancel' order.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-secondary" style="width:100%; justify-content:center;">Cancel repair</button>
+        </form>
         <a href="{% url 'invoice_create' %}?ro={{ order.pk }}" class="btn btn-primary" style="width:100%; justify-content:center;">
           💰 Create Invoice
         </a>
       </div>
+      {% endif %}
 
       <div style="margin-top:12px; font-size:12px; color:var(--muted);">
         Created: {{ order.date_created|date:"d M Y H:i" }}<br>
@@ -161,6 +340,40 @@
     <div class="card" style="position:sticky; top:80px;">
       <div class="card-title">Order Summary</div>
       <div style="display:flex; flex-direction:column; gap:12px;">
+        {% if invoice %}
+        <div class="flex justify-between">
+          <span class="text-muted">Invoice</span>
+          <a href="{% url 'invoice_detail' invoice.pk %}" class="fw-600 text-orange">#{{ invoice.pk }}</a>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-muted">Payment status</span>
+          <span class="fw-600">{{ invoice.get_payment_status_display }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-muted">Service amount</span>
+          <span class="fw-600">{{ invoice.service_amount|zar }}</span>
+        </div>
+        {% if invoice.discount %}
+        <div class="flex justify-between">
+          <span class="text-muted">Discount</span>
+          <span class="fw-600">{{ invoice.discount|zar }}</span>
+        </div>
+        {% endif %}
+        <div class="flex justify-between">
+          <span class="text-muted">Subtotal</span>
+          <span class="fw-600">{{ invoice.subtotal|zar }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-muted">Tax ({{ invoice.tax_rate|floatformat:"2" }}%)</span>
+          <span class="fw-600">{{ invoice.tax_amount|zar }}</span>
+        </div>
+        <div style="height:1px; background:var(--border);"></div>
+        <div class="flex justify-between">
+          <span class="fw-600" style="font-size:16px;">Total Due</span>
+          <span class="fw-600 text-orange" style="font-size:18px;">{{ invoice.total_due|zar }}</span>
+        </div>
+        <a href="{% url 'invoice_detail' invoice.pk %}" class="btn btn-primary" style="margin-top:8px; width:100%; justify-content:center;">View invoice</a>
+        {% else %}
         <div class="flex justify-between">
           <span class="text-muted">Status</span>
           <span class="fw-600">{{ order.get_status_display }}</span>
@@ -171,9 +384,10 @@
         </div>
         <div style="height:1px; background:var(--border);"></div>
         <div class="flex justify-between">
-          <span class="fw-600" style="font-size:16px;">Subtotal</span>
-          <span class="fw-600 text-orange" style="font-size:18px;">R {{ order.grand_total }}</span>
+          <span class="fw-600" style="font-size:16px;">Estimate</span>
+          <span class="fw-600 text-orange" style="font-size:18px;">{{ order.grand_total|zar }}</span>
         </div>
+        {% endif %}
       </div>
       <div style="margin-top:12px; font-size:12px; color:var(--muted);">
         Created: {{ order.date_created|date:"d M Y H:i" }}<br>

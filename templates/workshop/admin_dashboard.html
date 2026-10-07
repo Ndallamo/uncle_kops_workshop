@@ -5,17 +5,16 @@
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
     <a href="{% url 'customer_create' %}" class="btn btn-primary btn-sm">Add customer</a>
-    <a href="{% url 'repair_order_create' %}" class="btn btn-secondary btn-sm">New repair order</a>
+    <a href="{% url 'repair_order_create' %}" class="btn btn-secondary btn-sm">Create new job</a>
     <a href="{% url 'report' %}" class="btn btn-secondary btn-sm">View reports</a>
     <a href="{% url 'employee_list' %}" class="btn btn-secondary btn-sm">Manage employees</a>
   </div>
 {% endblock %}
 
 {% block content %}
-<div class="card mb-6">
-  <div class="card-title">Overview</div>
-  <div class="context-note">Track core shop health and jump to your next priority task from one place.</div>
-</div>
+{% url 'customer_create' as welcome_primary_url %}
+{% url 'repair_order_create' as welcome_secondary_url %}
+{% include "workshop/includes/welcome_panel.html" with welcome_role="admin" heading="Set up your workshop" description="Add a customer, register their vehicle, then create and assign a repair order to start the workflow." primary_url=welcome_primary_url primary_label="Add a customer" secondary_url=welcome_secondary_url secondary_label="Create a repair order" %}
 <div class="stat-grid">
   <div class="stat-card orange">
     <div class="stat-value">{{ open_repair_orders }}</div>
@@ -41,6 +40,18 @@
     <div class="stat-value">{{ unpaid_invoices }}</div>
     <div class="stat-label">Unpaid invoices</div>
   </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ partial_invoices }}</div>
+    <div class="stat-label">Partially paid</div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-value">{{ verification_invoices }}</div>
+    <div class="stat-label">Needs verification</div>
+  </div>
+  <a href="{% url 'invoice_list' %}?status=paid" class="stat-card green" style="text-decoration:none; color:inherit;">
+    <div class="stat-value">{{ paid_invoices }}</div>
+    <div class="stat-label">Paid invoices</div>
+  </a>
 </div>
 
 <div class="card mb-6">
@@ -61,6 +72,39 @@
   </div>
 </div>
 
+<div class="card mb-6">
+  <div class="card-title">Status updates awaiting approval</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Mechanic</th><th>Current status</th><th>Proposed status</th><th>Review</th></tr>
+      </thead>
+      <tbody>
+        {% for order in status_proposals %}
+        <tr>
+          <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+          <td>{{ order.vehicle.customer.full_name }}</td>
+          <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+          <td>{{ order.assigned_tech.get_full_name|default:order.assigned_tech.username }}</td>
+          <td>{{ order.get_status_display }}</td>
+          <td class="fw-600 text-orange">{{ order.get_pending_status_display }}</td>
+          <td>
+            <form method="post" action="{% url 'repair_order_status_review' order.pk 'approve' %}" style="display:inline;">
+              {% csrf_token %}<button type="submit" class="btn btn-primary btn-sm">Approve</button>
+            </form>
+            <form method="post" action="{% url 'repair_order_status_review' order.pk 'reject' %}" style="display:inline;">
+              {% csrf_token %}<button type="submit" class="btn btn-secondary btn-sm">Reject</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7"><div class="empty-state"><strong>Approval queue is clear</strong><span>Mechanic status proposals will appear here for review.</span><a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">View repair orders</a></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-title">Recent repair orders</div>
   <div class="table-wrap">
@@ -77,7 +121,7 @@
           <td>{{ order.get_status_display }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="4" class="text-muted">No recent repair orders.</td></tr>
+        <tr><td colspan="4"><div class="empty-state"><strong>No repair orders yet</strong><span>Create one after adding a customer and vehicle.</span><a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">Create first repair order</a></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

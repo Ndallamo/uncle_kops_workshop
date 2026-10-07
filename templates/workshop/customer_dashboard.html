@@ -3,18 +3,11 @@
 {% block page_title %}Customer Dashboard{% endblock %}
 
 {% block content %}
-<div class="card mb-6">
-  <div class="flex items-center justify-between" style="flex-wrap:wrap; gap:20px;">
-    <div>
-      <div class="card-title">Welcome back, {{ user.first_name|default:user.username }}</div>
-      <div class="text-muted">Track your repair progress, approve cost estimates, and submit new service requests.</div>
-      <div class="context-note">Your most important actions are placed at the top so you can move from review to request with a single click.</div>
-    </div>
-    <a href="{% url 'appointment_create' %}" class="btn btn-primary">Submit service request</a>
-  </div>
-</div>
+{% url 'appointment_create' as welcome_primary_url %}
+{% url 'repair_order_list' as welcome_secondary_url %}
+{% include "workshop/includes/welcome_panel.html" with welcome_role="customer" heading="Start with a service request" description="Book a workshop visit, then use Track repair status to follow approved updates." primary_url=welcome_primary_url primary_label="Submit a service request" secondary_url=welcome_secondary_url secondary_label="Track repair status" %}
 
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
+<div class="dashboard-grid" style="margin-bottom:20px;">
   <div class="card">
     <div class="card-title">Track repair status</div>
     <div class="table-wrap">
@@ -31,7 +24,7 @@
             <td>{{ order.date_updated|date:"d M Y" }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="4" class="text-muted">No repair orders found.</td></tr>
+          <tr><td colspan="4"><div class="empty-state"><strong>No repair orders yet</strong><span>Once a mechanic reviews your request, approved progress updates will appear here.</span><a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">Request service</a></div></td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -41,14 +34,23 @@
   <div class="card">
     <div class="card-title">Receive notifications</div>
     <div style="margin-top:16px;">
-      {% if notifications %}
+      {% if notification_items or notifications %}
         <ul style="list-style:none; padding:0; margin:0;">
+          {% for note in notification_items %}
+          <li class="alert alert-info" style="margin-bottom:12px;">
+            <a href="{{ note.link|default:'/' }}" class="text-orange">{{ note.message }}</a>
+            <form method="post" action="{% url 'notification_mark_read' note.pk %}" style="display:inline; margin-left:8px;">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-secondary btn-sm">Mark as read</button>
+            </form>
+          </li>
+          {% endfor %}
           {% for note in notifications %}
           <li class="alert alert-info" style="margin-bottom:12px;">{{ note }}</li>
           {% endfor %}
         </ul>
       {% else %}
-        <div class="text-muted">No new notifications right now. You will get alerts when there are updates on your repair orders or approvals.</div>
+        <div class="empty-state"><strong>You’re up to date</strong><span>We’ll show repair and approval updates here.</span><a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">View repair status</a></div>
       {% endif %}
     </div>
   </div>
@@ -70,7 +72,7 @@
           <td><a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-secondary btn-sm">Review</a></td>
         </tr>
         {% empty %}
-        <tr><td colspan="4" class="text-muted">No pending approvals at the moment.</td></tr>
+        <tr><td colspan="4"><div class="empty-state"><strong>No approvals to review</strong><span>Cost estimates that need your attention will appear here.</span><a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">View repair orders</a></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

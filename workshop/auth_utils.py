@@ -6,13 +6,12 @@ from django.conf import settings
 from django.core.cache import cache
 from .models import EmailVerificationToken
 from .models import PasswordResetToken
+from .currency import format_rand
 
 
 def send_verification_email(request, user, ttl_minutes=30):
     raw_token, token_obj = EmailVerificationToken.generate_for_user(user, ttl_minutes=ttl_minutes)
-    host = request.get_host()
-    scheme = 'https' if request.is_secure() else 'http'
-    verify_url = f"{scheme}://{host}/verify-email/?token={raw_token}"
+    verify_url = f"{_public_base_url(request)}/verify-email/?token={raw_token}"
     subject = 'Verify Your Uncle Kop\'s Workshop Account'
     customer_name = user.get_full_name() or user.username
     message = (
@@ -63,11 +62,18 @@ def can_resend_verification(user, limit=3, period_seconds=3600):
     return True
 
 
+def can_request_password_reset(user, limit=3, period_seconds=3600):
+    window_start = timezone.now() - timezone.timedelta(seconds=period_seconds)
+    recent_requests = PasswordResetToken.objects.filter(
+        user=user,
+        created_at__gte=window_start,
+    ).count()
+    return recent_requests < limit
+
+
 def send_password_reset_email(request, user, ttl_minutes=30):
     raw_token, token_obj = PasswordResetToken.generate_for_user(user, ttl_minutes=ttl_minutes)
-    host = request.get_host()
-    scheme = 'https' if request.is_secure() else 'http'
-    reset_url = f"{scheme}://{host}/reset-password/?token={raw_token}"
+    reset_url = f"{_public_base_url(request)}/reset-password/?token={raw_token}"
     subject = 'Reset Your Password'
     customer_name = user.get_full_name() or user.username
     message = (
@@ -83,6 +89,13 @@ def send_password_reset_email(request, user, ttl_minutes=30):
     return token_obj
 
 
+def _public_base_url(request):
+    configured_url = getattr(settings, 'PUBLIC_BASE_URL', '').rstrip('/')
+    if configured_url:
+        return configured_url
+    return request.build_absolute_uri('/').rstrip('/')
+
+
 def send_invoice_ready_email(request, invoice):
     customer = invoice.repair_order.vehicle.customer
     vehicle = invoice.repair_order.vehicle
@@ -96,8 +109,8 @@ def send_invoice_ready_email(request, invoice):
         "Your invoice is ready.\n\n"
         f"Invoice: #{invoice.pk}\n"
         f"Vehicle: {vehicle_summary}\n"
-        f"Amount Due: {invoice.total_due}\n\n"
-        "Please log in to your account to view the invoice and make payment.\n\n"
+        f"Balance Due: {format_rand(invoice.balance_due)}\n\n"
+        "Please log in to view the invoice and contact the workshop to arrange payment.\n\n"
         f"[View Invoice]\n{invoice_url}\n\n"
         "Thank you,\n"
         "Uncle Kop's Workshop"

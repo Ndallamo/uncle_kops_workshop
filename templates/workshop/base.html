@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-{% load user_extras %}
+{% load user_extras static %}
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Uncle Kop's Workshop{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -59,6 +60,7 @@
       position: fixed;
       top: 0; left: 0; bottom: 0;
       z-index: 100;
+      transition: transform .2s ease;
     }
     .sidebar-logo {
       padding: 24px 20px 20px;
@@ -103,7 +105,19 @@
     }
     .nav-item:hover { color: var(--text); background: rgba(255,255,255,.04); }
     .nav-item.active { color: var(--orange2); border-left-color: var(--orange); background: rgba(232,80,10,.08); }
-    .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+    .nav-item .icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      color: var(--orange);
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .nav-item:hover .icon,
+    .nav-item.active .icon { color: var(--orange2); }
 
     .sidebar-footer {
       margin-top: auto;
@@ -115,7 +129,16 @@
       flex-direction: column;
       gap: 6px;
     }
-    .sidebar-footer a { color: var(--orange2); text-decoration: none; }
+    .sidebar-footer a,
+    .sidebar-footer button { color: var(--orange2); text-decoration: none; }
+    .sidebar-footer button {
+      padding: 0;
+      border: 0;
+      background: none;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
     .legal-links {
       display: flex;
       flex-wrap: wrap;
@@ -128,14 +151,82 @@
       justify-content: center;
       gap: 12px;
       flex-wrap: wrap;
-      padding-top: 20px;
+      position: fixed;
+      left: 240px;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      padding: 14px 20px;
+      background: var(--dark);
+      border-top: 1px solid var(--border);
       font-size: 12px;
       color: var(--muted);
+      transition: left .2s ease;
     }
     .page-footer a {
       color: var(--orange2);
       text-decoration: none;
     }
+    .breadcrumbs {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 28px 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .breadcrumbs a { color: var(--orange2); text-decoration: none; }
+    .breadcrumbs a:hover { text-decoration: underline; }
+    .welcome-panel {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 0 0 24px;
+      padding: 22px 56px 22px 24px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--orange);
+      border-radius: 8px;
+    }
+    .welcome-panel[hidden] { display: none; }
+    .welcome-copy { max-width: 720px; }
+    .welcome-copy .nav-label { padding: 0; color: var(--orange2); }
+    .welcome-copy h2 { margin-top: 6px; font-size: 22px; color: var(--text); }
+    .welcome-copy p { margin-top: 6px; color: var(--muted); line-height: 1.5; }
+    .welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .welcome-dismiss {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .welcome-dismiss:hover { color: var(--text); border-color: var(--orange); }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+    }
+    .empty-state {
+      display: grid;
+      justify-items: start;
+      gap: 8px;
+      padding: 10px 4px;
+      color: var(--muted);
+      white-space: normal;
+    }
+    .empty-state strong { color: var(--text); font-size: 14px; }
+    .empty-state span { line-height: 1.5; }
     .cookie-banner {
       position: fixed;
       left: 20px;
@@ -147,7 +238,10 @@
       border-radius: 12px;
       box-shadow: 0 20px 35px rgba(0,0,0,0.25);
       padding: 16px 18px;
+      transition: left .2s ease;
     }
+    body.has-sidebar .cookie-banner { left: 260px; }
+    body.has-sidebar.sidebar-collapsed .cookie-banner { left: 20px; }
     .cookie-content {
       display: flex;
       align-items: center;
@@ -201,7 +295,28 @@
       display: flex;
       flex-direction: column;
       min-height: 100vh;
+      min-width: 0;
+      transition: margin-left .2s ease;
     }
+    body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
+    body.sidebar-collapsed .main { margin-left: 0; }
+    body.sidebar-collapsed .page-footer { left: 0; }
+    .sidebar-toggle {
+      width: 40px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      flex: 0 0 40px;
+    }
+    .sidebar-toggle:hover { border-color: var(--orange); color: var(--orange2); }
+    .sidebar-toggle svg { width: 20px; height: 20px; }
+    .sidebar-backdrop { display: none; }
     .topbar {
       height: 60px;
       background: var(--darker);
@@ -245,7 +360,36 @@
     .btn-secondary:hover { border-color: var(--muted); }
     .btn-sm { padding: 5px 11px; font-size: 12px; }
 
-    .content { padding: 28px; flex: 1; }
+    .content { padding: 28px 28px 76px; flex: 1; min-width: 0; }
+
+    @media (max-width: 800px) {
+      .sidebar { transform: translateX(-100%); box-shadow: 12px 0 30px rgba(0,0,0,.25); }
+      body.sidebar-open .sidebar { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .page-footer { left: 0; }
+      body.has-sidebar .cookie-banner { left: 20px; }
+      .sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        border: 0;
+        background: rgba(0,0,0,.45);
+      }
+      body.sidebar-open .sidebar-backdrop { display: block; }
+      .topbar { height: auto; min-height: 60px; flex-wrap: wrap; padding: 10px 16px; gap: 10px; }
+      .topbar-title { min-width: 0; }
+      .topbar > .flex,
+      .topbar > a.btn { order: 3; flex: 1 1 100%; width: 100%; }
+      .topbar > .flex { flex-wrap: wrap; }
+      .theme-toggle { order: 2; margin: 0; }
+      .content { padding: 20px 16px 76px; }
+      .topbar-user { display: none; }
+      .breadcrumbs { padding: 10px 16px 0; }
+      .welcome-panel { margin-bottom: 20px; padding: 20px 48px 20px 18px; }
+      .welcome-copy h2 { font-size: 19px; }
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    }
 
     /* ── Cards & Panels ── */
     .card {
@@ -419,6 +563,7 @@
 
     /* ── Utilities ── */
     .flex { display: flex; }
+    .flex-wrap { flex-wrap: wrap; }
     .items-center { align-items: center; }
     .justify-between { justify-content: space-between; }
     .gap-2 { gap: 8px; }
@@ -502,7 +647,8 @@
     html.light-mode .sidebar-footer {
       color: #4B5563;
     }
-    html.light-mode .sidebar-footer a {
+    html.light-mode .sidebar-footer a,
+    html.light-mode .sidebar-footer button {
       color: var(--orange2);
     }
     html.light-mode .topbar-title {
@@ -614,11 +760,24 @@
   </style>
   {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body{% if user.is_authenticated %} class="has-sidebar"{% endif %}>
 
 {% if user.is_authenticated %}
+<svg aria-hidden="true" width="0" height="0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; overflow:hidden">
+  <symbol id="icon-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><rect x="3" y="14" width="8" height="7" rx="1"/></symbol>
+  <symbol id="icon-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3 18l3 3 5.3-5.3a5 5 0 0 0 6.4-6.4L14 13l-3-3z"/></symbol>
+  <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h2m4 0h2m-8 4h2m4 0h2"/></symbol>
+  <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.7 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.7-1.4-2.4 1.4-1.1a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.7-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.7 1l1.7-.7 1.4 2.4-1.4 1.1a8 8 0 0 1 0 2z"/></symbol>
+  <symbol id="icon-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5V3h6v1.5M9 10h6m-6 4h6m-6 4h3"/></symbol>
+  <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l4-4 4 3 6-7"/></symbol>
+  <symbol id="icon-receipt" viewBox="0 0 24 24"><path d="M5 3v18l3-2 4 2 4-2 3 2V3l-3 2-4-2-4 2zM9 9h6m-6 4h6"/></symbol>
+  <symbol id="icon-car" viewBox="0 0 24 24"><path d="m5 11 2-5h10l2 5 2 2v5h-2v2h-3v-2H8v2H5v-2H3v-5zM5 11h14M6 15h2m8 0h2"/></symbol>
+  <symbol id="icon-box" viewBox="0 0 24 24"><path d="m3 7 9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4m-9 4v10m-4-16 9 4"/></symbol>
+  <symbol id="icon-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0m1-14a3 3 0 0 1 0 6m1 3a5 5 0 0 1 4 5"/></symbol>
+</svg>
 <!-- ── Sidebar ─────────────────────────────── -->
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="brand">Uncle <span>Kop's</span><br>Workshop</div>
     <div class="tagline">Auto Repair Management</div>
@@ -630,106 +789,112 @@
       <div class="nav-section">
         <div class="nav-label">Customer</div>
         <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-          <span class="icon">📊</span> Dashboard
+          <svg class="icon" aria-hidden="true"><use href="#icon-dashboard"/></svg> Dashboard
         </a>
         <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🔧</span> Track repair status
+          <svg class="icon" aria-hidden="true"><use href="#icon-wrench"/></svg> Track repair status
         </a>
         <a href="{% url 'appointment_create' %}" class="nav-item {% if request.resolver_match.url_name == 'appointment_create' %}active{% endif %}">
-          <span class="icon">📅</span> Submit service request
+          <svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg> Submit service request
         </a>
         <a href="{% url 'customer_profile' %}" class="nav-item {% if request.resolver_match.url_name == 'customer_profile' %}active{% endif %}">
-          <span class="icon">👤</span> Customer details
+          <svg class="icon" aria-hidden="true"><use href="#icon-user"/></svg> Customer details
         </a>
       </div>
       {% elif role == 'mechanic' %}
       <div class="nav-section">
         <div class="nav-label">Mechanic</div>
         <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-          <span class="icon">🛠️</span> My jobs
+          <svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg> My jobs
         </a>
         <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🔧</span> View assigned jobs
+          <svg class="icon" aria-hidden="true"><use href="#icon-wrench"/></svg> View assigned jobs
         </a>
-        <a href="{% url 'repair_order_list' %}?status=in_progress" class="nav-item">
-          <span class="icon">⚙️</span> Update job status
+        <a href="{% url 'repair_order_list' %}?status=in_progress&amp;action=status" class="nav-item">
+          <svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg> Update job status
         </a>
-        <a href="{% url 'repair_order_list' %}" class="nav-item">
-          <span class="icon">🧰</span> Log parts & labour
+        <a href="{% url 'repair_order_list' %}?status=in_progress&amp;action=work" class="nav-item">
+          <svg class="icon" aria-hidden="true"><use href="#icon-clipboard"/></svg> Log parts & labour
+        </a>
+        <a href="{% url 'repair_order_list' %}?status=waiting&amp;action=waiting" class="nav-item">
+          <svg class="icon" aria-hidden="true"><use href="#icon-box"/></svg> Waiting for parts
         </a>
       </div>
       {% elif role == 'admin' %}
       <div class="nav-section">
         <div class="nav-label">Admin</div>
         <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-          <span class="icon">📊</span> Admin dashboard
+          <svg class="icon" aria-hidden="true"><use href="#icon-dashboard"/></svg> Admin dashboard
         </a>
         <a href="{% url 'report' %}" class="nav-item {% if request.resolver_match.url_name == 'report' %}active{% endif %}">
-          <span class="icon">📈</span> Reports
+          <svg class="icon" aria-hidden="true"><use href="#icon-chart"/></svg> Reports
+        </a>
+        <a href="{% url 'audit_log' %}" class="nav-item {% if request.resolver_match.url_name == 'audit_log' %}active{% endif %}">
+          <svg class="icon" aria-hidden="true"><use href="#icon-clipboard"/></svg> Audit log
         </a>
         <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🔧</span> Repair Orders
+          <svg class="icon" aria-hidden="true"><use href="#icon-wrench"/></svg> Repair Orders
         </a>
         <a href="{% url 'appointment_list' %}" class="nav-item {% if 'appointment' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">📅</span> Appointments
+          <svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg> Appointments
         </a>
         <a href="{% url 'invoice_list' %}" class="nav-item {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">💰</span> Invoices
+          <svg class="icon" aria-hidden="true"><use href="#icon-receipt"/></svg> Invoices
         </a>
         <a href="{% url 'customer_list' %}" class="nav-item {% if 'customer' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">👤</span> Customers
+          <svg class="icon" aria-hidden="true"><use href="#icon-user"/></svg> Customers
         </a>
         <a href="{% url 'vehicle_list' %}" class="nav-item {% if 'vehicle' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🚗</span> Vehicles
+          <svg class="icon" aria-hidden="true"><use href="#icon-car"/></svg> Vehicles
         </a>
         <a href="{% url 'parts_list' %}" class="nav-item {% if 'part' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">📦</span> Parts
+          <svg class="icon" aria-hidden="true"><use href="#icon-box"/></svg> Parts
         </a>
         <a href="{% url 'service_list' %}" class="nav-item {% if 'service' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🛠️</span> Services
+          <svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg> Services
         </a>
         <a href="{% url 'employee_list' %}" class="nav-item {% if 'employee' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">👷</span> Employees
+          <svg class="icon" aria-hidden="true"><use href="#icon-users"/></svg> Employees
         </a>
       </div>
       {% else %}
       <div class="nav-section">
         <div class="nav-label">Overview</div>
         <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-          <span class="icon">📊</span> Dashboard
+          <svg class="icon" aria-hidden="true"><use href="#icon-dashboard"/></svg> Dashboard
         </a>
       </div>
 
       <div class="nav-section">
         <div class="nav-label">Workshop</div>
         <a href="{% url 'repair_order_list' %}" class="nav-item {% if 'repair_order' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🔧</span> Repair Orders
+          <svg class="icon" aria-hidden="true"><use href="#icon-wrench"/></svg> Repair Orders
         </a>
         <a href="{% url 'appointment_list' %}" class="nav-item {% if 'appointment' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">📅</span> Appointments
+          <svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg> Appointments
         </a>
         <a href="{% url 'invoice_list' %}" class="nav-item {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">💰</span> Invoices
+          <svg class="icon" aria-hidden="true"><use href="#icon-receipt"/></svg> Invoices
         </a>
       </div>
 
       <div class="nav-section">
         <div class="nav-label">Records</div>
         <a href="{% url 'customer_list' %}" class="nav-item {% if 'customer' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">👤</span> Customers
+          <svg class="icon" aria-hidden="true"><use href="#icon-user"/></svg> Customers
         </a>
         <a href="{% url 'vehicle_list' %}" class="nav-item {% if 'vehicle' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🚗</span> Vehicles
+          <svg class="icon" aria-hidden="true"><use href="#icon-car"/></svg> Vehicles
         </a>
       </div>
 
       <div class="nav-section">
         <div class="nav-label">Inventory</div>
         <a href="{% url 'parts_list' %}" class="nav-item {% if 'part' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">📦</span> Parts
+          <svg class="icon" aria-hidden="true"><use href="#icon-box"/></svg> Parts
         </a>
         <a href="{% url 'service_list' %}" class="nav-item {% if 'service' in request.resolver_match.url_name %}active{% endif %}">
-          <span class="icon">🛠️</span> Services
+          <svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg> Services
         </a>
       </div>
       {% endif %}
@@ -738,17 +903,20 @@
 
   <div class="sidebar-footer">
     <div>Logged in as <strong>{{ user.username }}</strong></div>
-    <a href="{% url 'logout' %}">Sign out</a>
-    <div class="legal-links">
-      <a href="{% url 'privacy_policy' %}">Privacy Policy</a>
-      <a href="{% url 'terms_and_conditions' %}">Terms</a>
-    </div>
+    <form action="{% url 'logout' %}" method="post">
+      {% csrf_token %}
+      <button type="submit">Sign out</button>
+    </form>
   </div>
 </aside>
+<button class="sidebar-backdrop" type="button" aria-label="Close navigation menu"></button>
 
 <!-- ── Main ────────────────────────────────── -->
 <div class="main">
   <header class="topbar">
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Open navigation menu" aria-expanded="false" aria-controls="sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
     <div class="topbar-title">{% block page_title %}Uncle Kop's Workshop{% endblock %}</div>
     {% block topbar_actions %}{% endblock %}
     <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light mode">
@@ -756,6 +924,7 @@
     </button>
     <span class="topbar-user">{{ user.get_full_name|default:user.username }}</span>
   </header>
+  {% block breadcrumbs %}{% endblock %}
 
   <div class="content">
     {% if messages %}
@@ -767,17 +936,24 @@
     {% endif %}
 
     {% block content %}{% endblock %}
-    <footer class="page-footer">
-      <a href="{% url 'privacy_policy' %}">Privacy Policy</a>
-      <span>•</span>
-      <a href="{% url 'terms_and_conditions' %}">Terms and Conditions</a>
-    </footer>
   </div>
+  <footer class="page-footer">
+    <a href="{% url 'privacy_policy' %}">Privacy Policy</a>
+    <span>•</span>
+    <a href="{% url 'terms_and_conditions' %}">Terms and Conditions</a>
+  </footer>
 </div>
 
 {% else %}
 <!-- Login page layout -->
 <div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--dark); position:relative;">
+  {% if messages %}
+  <div class="messages" role="status" aria-live="polite" style="position:absolute; top:64px; left:50%; transform:translateX(-50%); width:min(480px, calc(100% - 32px)); z-index:1;">
+    {% for msg in messages %}
+    <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
   <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light mode" style="position:absolute; top:20px; right:20px;">
     <span id="themeIcon">🌙</span>
   </button>
@@ -868,15 +1044,58 @@
     });
   }
 
+  function initSidebar() {
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebarBackdrop = document.querySelector('.sidebar-backdrop');
+    if (!sidebarToggle || !sidebarBackdrop) {
+      return;
+    }
+
+    const mobileQuery = window.matchMedia('(max-width: 800px)');
+    const setOpen = (isOpen) => {
+      document.body.classList.toggle('sidebar-open', mobileQuery.matches && isOpen);
+      document.body.classList.toggle('sidebar-collapsed', !mobileQuery.matches && !isOpen);
+      sidebarToggle.setAttribute('aria-expanded', String(isOpen));
+      sidebarToggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+    };
+
+    sidebarToggle.addEventListener('click', () => {
+      const isOpen = mobileQuery.matches
+        ? document.body.classList.contains('sidebar-open')
+        : !document.body.classList.contains('sidebar-collapsed');
+      setOpen(!isOpen);
+    });
+    sidebarBackdrop.addEventListener('click', () => setOpen(false));
+    mobileQuery.addEventListener('change', () => setOpen(!mobileQuery.matches));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    });
+  }
+
+  function initWelcomePanels() {
+    document.querySelectorAll('[data-welcome-panel]').forEach((panel) => {
+      const dismissButton = panel.querySelector('[data-dismiss-welcome]');
+      dismissButton?.addEventListener('click', () => {
+        panel.hidden = true;
+      });
+    });
+  }
+
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       initTheme();
       initCookieBanner();
+      initSidebar();
+      initWelcomePanels();
     });
   } else {
     initTheme();
     initCookieBanner();
+    initSidebar();
+    initWelcomePanels();
   }
 </script>
 </body>

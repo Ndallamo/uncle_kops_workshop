@@ -1,4 +1,5 @@
 {% extends "workshop/base.html" %}
+{% load user_extras %}
 {% block title %}Parts Inventory{% endblock %}
 {% block page_title %}Parts Inventory{% endblock %}
 {% block topbar_actions %}
@@ -34,16 +35,27 @@
             {% endif %}
           </td>
           <td>{{ p.reorder_level }}</td>
-          <td>R {{ p.cost_price }}</td>
-          <td>R {{ p.sell_price }}</td>
+          <td>{{ p.cost_price|zar }}</td>
+          <td>{{ p.sell_price|zar }}</td>
           <td class="text-muted">{{ p.supplier|default:"—" }}</td>
           <td><a href="{% url 'part_edit' p.pk %}" class="btn btn-secondary btn-sm">Edit</a></td>
         </tr>
         {% empty %}
-        <tr><td colspan="8" class="text-muted">No parts found.</td></tr>
+        <tr><td colspan="8"><div class="empty-state">
+          {% if q %}<strong>No parts match “{{ q }}”</strong><span>Check the part name or number and try again.</span><a href="{% url 'parts_list' %}" class="btn btn-secondary btn-sm">Clear search</a>
+          {% elif low_stock %}<strong>No low-stock parts</strong><span>All recorded parts are currently above their reorder levels.</span><a href="{% url 'parts_list' %}" class="btn btn-secondary btn-sm">Show all parts</a>
+          {% else %}<strong>No parts in inventory</strong><span>Add stock items here to make them available for repair orders.</span><a href="{% url 'part_create' %}" class="btn btn-primary btn-sm">Add first part</a>{% endif %}
+        </div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if parts.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between" style="margin-top:16px;">
+  {% if parts.has_previous %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&low_stock={{ low_stock|urlencode }}&page={{ parts.previous_page_number }}">Previous</a>{% else %}<span></span>{% endif %}
+  <span class="text-muted">Page {{ parts.number }} of {{ parts.paginator.num_pages }}</span>
+  {% if parts.has_next %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&low_stock={{ low_stock|urlencode }}&page={{ parts.next_page_number }}">Next</a>{% else %}<span></span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

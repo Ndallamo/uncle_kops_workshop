@@ -1,0 +1,12 @@
+<section class="welcome-panel" data-welcome-panel data-role="{{ welcome_role }}" data-user-id="{{ user.pk }}" aria-labelledby="welcome-title">
+  <div class="welcome-copy">
+    <div class="nav-label">Quick start · {{ welcome_role|title }}</div>
+    <h2 id="welcome-title">{{ heading }}</h2>
+    <p>{{ description }}</p>
+    <div class="welcome-actions">
+      <a href="{{ primary_url }}" class="btn btn-primary">{{ primary_label }}</a>
+      {% if secondary_url %}<a href="{{ secondary_url }}" class="btn btn-secondary">{{ secondary_label }}</a>{% endif %}
+    </div>
+  </div>
+  <button type="button" class="welcome-dismiss" data-dismiss-welcome aria-label="Dismiss welcome guide" title="Dismiss welcome guide">×</button>
+</section>

@@ -10,6 +10,14 @@
 <div class="card mb-6">
   <form method="get" class="flex gap-2">
     <input name="q" value="{{ q }}" placeholder="Search by customer, make, model, plate, or VIN…" style="max-width:320px;">
+    <label for="vehicle-sort">Sort by
+      <select id="vehicle-sort" name="sort">
+        <option value="recent" {% if sort == 'recent' %}selected{% endif %}>Recently added</option>
+        <option value="make" {% if sort == 'make' %}selected{% endif %}>Make and model</option>
+        <option value="year" {% if sort == 'year' %}selected{% endif %}>Newest model year</option>
+        <option value="customer" {% if sort == 'customer' %}selected{% endif %}>Customer</option>
+      </select>
+    </label>
     <button type="submit" class="btn btn-secondary">Search</button>
     {% if q %}<a href="{% url 'vehicle_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
   </form>
@@ -41,10 +49,23 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted">No vehicles found.</td></tr>
+        <tr><td colspan="7"><div class="empty-state">
+          {% if q %}
+          <strong>No vehicles match “{{ q }}”</strong><span>Try a different customer, make, model, plate, or VIN.</span><a href="{% url 'vehicle_list' %}" class="btn btn-secondary btn-sm">Clear search</a>
+          {% else %}
+          <strong>No vehicles on file</strong><span>Add a vehicle to connect repair orders and appointments to its service history.</span><a href="{% url 'vehicle_create' %}" class="btn btn-primary btn-sm">Add first vehicle</a>
+          {% endif %}
+        </div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if vehicles.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between" style="margin-top:16px;">
+  {% if vehicles.has_previous %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&sort={{ sort|urlencode }}&page={{ vehicles.previous_page_number }}">Previous</a>{% else %}<span></span>{% endif %}
+  <span class="text-muted">Page {{ vehicles.number }} of {{ vehicles.paginator.num_pages }}</span>
+  {% if vehicles.has_next %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&sort={{ sort|urlencode }}&page={{ vehicles.next_page_number }}">Next</a>{% else %}<span></span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

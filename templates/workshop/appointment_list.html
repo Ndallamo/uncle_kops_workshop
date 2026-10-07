@@ -6,6 +6,16 @@
 {% endblock %}
 
 {% block content %}
+<div class="card mb-6">
+  <form method="get" class="flex gap-2 flex-wrap" style="align-items:flex-end;">
+    <label>Search<input type="search" name="q" value="{{ q }}" placeholder="Customer, vehicle or service"></label>
+    <label>Status<select name="status"><option value="">All statuses</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label>From<input type="date" name="start_date" value="{{ start_date|date:'Y-m-d' }}"></label>
+    <label>To<input type="date" name="end_date" value="{{ end_date|date:'Y-m-d' }}"></label>
+    <button type="submit" class="btn btn-secondary">Apply filters</button>
+    {% if q or status or start_date or end_date %}<a href="{% url 'appointment_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
+  </form>
+</div>
 <div class="card">
   <div class="table-wrap">
     <table>
@@ -17,23 +27,44 @@
         <tr>
           <td class="fw-600">{{ a.date_time|date:"d M Y, H:i" }}</td>
           <td><a href="{% url 'customer_detail' a.customer.pk %}" class="text-orange">{{ a.customer.full_name }}</a></td>
-          <td>{{ a.vehicle.year }} {{ a.vehicle.make }} {{ a.vehicle.model }}</td>
+          <td>{{ a.vehicle.year }} {{ a.vehicle.make }} {{ a.vehicle.model }}{% if a.vehicle.license_plate %}<div class="text-muted" style="font-size:11px;">{{ a.vehicle.license_plate }}</div>{% endif %}</td>
           <td>{{ a.duration }} min</td>
           <td>{% if a.assigned_mechanic %}{{ a.assigned_mechanic.get_full_name|default:a.assigned_mechanic.username }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
           <td>{{ a.get_assignment_status_display }}</td>
           <td>
             <a href="{% url 'appointment_edit' a.pk %}" class="btn btn-secondary btn-sm">Edit</a>
             {% if request.user.userprofile.role == 'mechanic' and a.assigned_mechanic_id == request.user.id and a.assignment_status == 'pending' %}
-              <a href="{% url 'appointment_decision' a.pk 'accept' %}" class="btn btn-primary btn-sm">Accept</a>
-              <a href="{% url 'appointment_decision' a.pk 'decline' %}" class="btn btn-danger btn-sm">Decline</a>
+              <form method="post" action="{% url 'appointment_decision' a.pk 'accept' %}" style="display:inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary btn-sm">Accept</button>
+              </form>
+              <form method="post" action="{% url 'appointment_decision' a.pk 'decline' %}" style="display:inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm">Decline</button>
+              </form>
             {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted">No appointments scheduled.</td></tr>
+        <tr><td colspan="7"><div class="empty-state">
+          {% if request.user.userprofile.role == 'customer' %}
+          <strong>No appointments booked</strong><span>Book a workshop visit to get started.</span><a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">Book an appointment</a>
+          {% elif request.user.userprofile.role == 'mechanic' %}
+          <strong>No appointments assigned</strong><span>New appointment requests from the admin will appear here.</span><a href="{% url 'dashboard' %}" class="btn btn-secondary btn-sm">Back to dashboard</a>
+          {% else %}
+          <strong>No appointments scheduled</strong><span>Booking an appointment adds a vehicle and service request to the shop schedule.</span><a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">Book first appointment</a>
+          {% endif %}
+        </div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if appointments.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between" style="margin-top:16px;">
+  {% if appointments.has_previous %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&status={{ status|urlencode }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&page={{ appointments.previous_page_number }}">Previous</a>{% else %}<span></span>{% endif %}
+  <span class="text-muted">Page {{ appointments.number }} of {{ appointments.paginator.num_pages }}</span>
+  {% if appointments.has_next %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&status={{ status|urlencode }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&page={{ appointments.next_page_number }}">Next</a>{% else %}<span></span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

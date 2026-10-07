@@ -1,0 +1,65 @@
+{% extends "workshop/base.html" %}
+{% block title %}Audit Log – Uncle Kop's Workshop{% endblock %}
+{% block page_title %}Audit Log{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{% url 'report' %}" class="btn btn-secondary btn-sm">Reports</a>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2 class="card-title">Workshop activity</h2>
+    <form method="get" role="search">
+      <label for="audit-query">Search activity</label>
+      <input id="audit-query" type="search" name="q" value="{{ query }}" placeholder="Action, record, user or ID">
+      <button class="btn btn-primary btn-sm" type="submit">Search</button>
+    </form>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">When</th>
+          <th scope="col">User</th>
+          <th scope="col">Action</th>
+          <th scope="col">Record</th>
+          <th scope="col">Repair order</th>
+          <th scope="col">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in audit_entries %}
+        <tr>
+          <td>{{ entry.created_at|date:"Y-m-d H:i" }}</td>
+          <td>{{ entry.actor|default:"System" }}</td>
+          <td>{{ entry.action }}</td>
+          <td>{{ entry.object_type }} #{{ entry.object_id|default:"-" }}</td>
+          <td>
+            {% if entry.repair_order_id %}
+              <a href="{% url 'repair_order_detail' entry.repair_order_id %}">RO #{{ entry.repair_order_id }}</a>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>{{ entry.details }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">No audit entries match this search.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <nav aria-label="Audit log pages">
+    {% if audit_entries.has_previous %}
+      <a href="?q={{ query|urlencode }}&page={{ audit_entries.previous_page_number }}">Previous</a>
+    {% endif %}
+    <span>Page {{ audit_entries.number }} of {{ audit_entries.paginator.num_pages }}</span>
+    {% if audit_entries.has_next %}
+      <a href="?q={{ query|urlencode }}&page={{ audit_entries.next_page_number }}">Next</a>
+    {% endif %}
+  </nav>
+</section>
+{% endblock %}

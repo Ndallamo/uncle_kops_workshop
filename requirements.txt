@@ -1,7 +1,8 @@
-Django>=4.2,<5.0
+Django>=5.2,<5.3
 Pillow>=10.0
 mysqlclient>=2.2
 PyMySQL>=1.1
 cryptography>=40.0
 argon2-cffi>=23.0
 python-dotenv>=1.0.1
+waitress>=3.0,<4

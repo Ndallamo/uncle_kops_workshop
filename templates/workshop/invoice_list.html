@@ -1,27 +1,30 @@
 {% extends "workshop/base.html" %}
+{% load user_extras %}
 {% block title %}Invoices{% endblock %}
 {% block page_title %}Invoices{% endblock %}
 {% block topbar_actions %}
-  {% if role != 'customer' %}
+  {% if role == 'admin' %}
     <a href="{% url 'invoice_create' %}" class="btn btn-primary btn-sm">+ New Invoice</a>
   {% endif %}
 {% endblock %}
 
 {% block content %}
 <div class="card mb-6">
-  <div class="flex gap-2">
-    <a href="{% url 'invoice_list' %}" class="btn {% if not status %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">All</a>
-    <a href="?status=unpaid"  class="btn {% if status == 'unpaid' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Unpaid</a>
-    <a href="?status=partial" class="btn {% if status == 'partial' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Partial</a>
-    <a href="?status=paid"    class="btn {% if status == 'paid' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Paid</a>
-  </div>
+  <form method="get" class="flex gap-2 flex-wrap" style="align-items:flex-end;">
+    <label>Search<input type="search" name="q" value="{{ q }}" placeholder="Invoice number, customer or plate"></label>
+    <label>Payment status<select name="status"><option value="">All statuses</option><option value="unpaid" {% if status == 'unpaid' %}selected{% endif %}>Unpaid</option><option value="partial" {% if status == 'partial' %}selected{% endif %}>Partially paid</option><option value="unverified" {% if status == 'unverified' %}selected{% endif %}>Needs verification</option><option value="paid" {% if status == 'paid' %}selected{% endif %}>Paid</option></select></label>
+    <label>Issued from<input type="date" name="start_date" value="{{ start_date|date:'Y-m-d' }}"></label>
+    <label>Issued to<input type="date" name="end_date" value="{{ end_date|date:'Y-m-d' }}"></label>
+    <button type="submit" class="btn btn-secondary">Apply filters</button>
+    {% if q or status or start_date or end_date %}<a href="{% url 'invoice_list' %}" class="btn btn-secondary">Clear</a>{% endif %}
+  </form>
 </div>
 
 <div class="card">
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>INV#</th><th>Customer</th><th>Issue Date</th><th>Due Date</th><th>Total (R)</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>INV#</th><th>Customer</th><th>Issue Date</th><th>Due Date</th><th>Total (R)</th><th>Received (R)</th><th>Balance (R)</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for inv in invoices %}
@@ -30,24 +33,42 @@
           <td>{{ inv.repair_order.vehicle.customer.full_name }}</td>
           <td>{{ inv.issue_date|date:"d M Y" }}</td>
           <td>{{ inv.due_date|date:"d M Y" }}</td>
-          <td class="fw-600">R {{ inv.total_due|floatformat:2 }}</td>
+          <td class="fw-600">{{ inv.total_due|zar }}</td>
+          <td>{{ inv.paid_amount|zar }}</td>
+          <td>{{ inv.balance_due|zar }}</td>
           <td>
             {% if inv.payment_status == 'paid' %}<span class="badge badge-green">Paid</span>
             {% elif inv.payment_status == 'partial' %}<span class="badge badge-yellow">Partial</span>
+            {% elif inv.payment_status == 'unverified' %}<span class="badge badge-yellow">Needs verification</span>
             {% else %}<span class="badge badge-red">Unpaid</span>{% endif %}
           </td>
           <td>
             <a href="{% url 'invoice_detail' inv.pk %}" class="btn btn-secondary btn-sm">View</a>
-            {% if role != 'customer' %}
+            {% if role == 'admin' %}
             <a href="{% url 'invoice_edit' inv.pk %}" class="btn btn-secondary btn-sm">Edit</a>
             {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-muted">No invoices found.</td></tr>
+        <tr><td colspan="9"><div class="empty-state">
+          {% if status or q or start_date or end_date %}
+          <strong>No invoices match these filters</strong><span>Clear the filters to see all invoices.</span><a href="{% url 'invoice_list' %}" class="btn btn-secondary btn-sm">Show all invoices</a>
+          {% elif role == 'customer' %}
+          <strong>No invoices yet</strong><span>Invoices will appear here when there is a bill for one of your repairs.</span><a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">View repair orders</a>
+          {% else %}
+          <strong>No invoices yet</strong><span>Create an invoice from a repair order to record charges and payment status.</span><a href="{% url 'invoice_create' %}" class="btn btn-primary btn-sm">Create first invoice</a>
+          {% endif %}
+        </div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if invoices.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between" style="margin-top:16px;">
+  {% if invoices.has_previous %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&status={{ status|urlencode }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&page={{ invoices.previous_page_number }}">Previous</a>{% else %}<span></span>{% endif %}
+  <span class="text-muted">Page {{ invoices.number }} of {{ invoices.paginator.num_pages }}</span>
+  {% if invoices.has_next %}<a class="btn btn-secondary btn-sm" href="?q={{ q|urlencode }}&status={{ status|urlencode }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&page={{ invoices.next_page_number }}">Next</a>{% else %}<span></span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}

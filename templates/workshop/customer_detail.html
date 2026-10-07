@@ -3,6 +3,7 @@
 {% block page_title %}{{ customer.full_name }}{% endblock %}
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center; gap:10px;">
+    {% if user.userprofile.role != 'customer' %}<a href="{% url 'customer_list' %}" class="btn btn-secondary btn-sm">All customers</a>{% endif %}
     <a href="{% url 'customer_edit' customer.pk %}" class="btn btn-secondary btn-sm">Edit customer</a>
     <a href="{% url 'vehicle_create' %}?customer={{ customer.pk }}" class="btn btn-secondary btn-sm">Add vehicle</a>
     <a href="{% url 'appointment_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">Book appointment</a>
@@ -73,7 +74,7 @@
               <td>{{ vehicle.mileage|floatformat:"0" }} km</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" class="text-muted">No vehicles on record.</td></tr>
+            <tr><td colspan="6"><div class="empty-state"><strong>No vehicles on record</strong><span>Add the customer's first vehicle to connect future appointments and repairs.</span><a href="{% url 'vehicle_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">Add vehicle</a></div></td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -108,7 +109,7 @@
               </td>
             </tr>
             {% empty %}
-            <tr><td colspan="4" class="text-muted">No recent appointments.</td></tr>
+            <tr><td colspan="4"><div class="empty-state"><strong>No appointments yet</strong><span>Book a visit to put the next service request on the schedule.</span><a href="{% url 'appointment_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">Book appointment</a></div></td></tr>
             {% endfor %}
           </tbody>
         </table>

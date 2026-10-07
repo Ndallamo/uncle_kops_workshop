@@ -3,6 +3,9 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
+{% url 'customer_list' as welcome_primary_url %}
+{% url 'repair_order_list' as welcome_secondary_url %}
+{% include "workshop/includes/welcome_panel.html" with welcome_role="staff" heading="Start from your next priority" description="Use the menu to manage customers, repair orders, appointments, and workshop inventory." primary_url=welcome_primary_url primary_label="View customers" secondary_url=welcome_secondary_url secondary_label="View repair orders" %}
 <!-- Stat Cards -->
 <div class="stat-grid">
   <div class="stat-card orange">
@@ -29,9 +32,13 @@
     <div class="stat-value">{{ unpaid_invoices }}</div>
     <div class="stat-label">Unpaid Invoices</div>
   </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ partial_invoices }}</div>
+    <div class="stat-label">Partially Paid</div>
+  </div>
 </div>
 
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+<div class="dashboard-grid">
 
   <!-- Recent Repair Orders -->
   <div class="card">
@@ -59,7 +66,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="4" class="text-muted">No repair orders yet.</td></tr>
+          <tr><td colspan="4"><div class="empty-state"><strong>No repair orders yet</strong><span>Create the first repair order to start tracking workshop work.</span><a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">Create first repair order</a></div></td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -88,7 +95,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="4" class="text-muted">No upcoming appointments.</td></tr>
+          <tr><td colspan="4"><div class="empty-state"><strong>No upcoming appointments</strong><span>Book a visit to add the next job to the schedule.</span><a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">Book an appointment</a></div></td></tr>
           {% endfor %}
         </tbody>
       </table>

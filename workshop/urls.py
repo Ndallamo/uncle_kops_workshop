@@ -12,8 +12,10 @@ urlpatterns = [
     path('',                        views.dashboard,              name='dashboard'),
     path('report/',                 views.report,                 name='report'),
     path('report/export/',          views.report_export,           name='report_export'),
+    path('audit-log/',              views.audit_log,               name='audit_log'),
     path('privacy-policy/',         views.privacy_policy,         name='privacy_policy'),
     path('terms-and-conditions/',   views.terms_and_conditions,   name='terms_and_conditions'),
+    path('notifications/<int:pk>/read/', views.notification_mark_read, name='notification_mark_read'),
 
     # Customers
     path('customers/',              views.customer_list,          name='customer_list'),
@@ -32,7 +34,16 @@ urlpatterns = [
     path('repairs/',                views.repair_order_list,      name='repair_order_list'),
     path('repairs/new/',            views.repair_order_create,    name='repair_order_create'),
     path('repairs/<int:pk>/',       views.repair_order_detail,    name='repair_order_detail'),
+    path('repairs/<int:pk>/estimate-lines/add/', views.repair_estimate_line_add, name='repair_estimate_line_add'),
+    path('repairs/<int:pk>/documents/upload/', views.repair_document_upload, name='repair_document_upload'),
+    path('documents/<int:pk>/download/', views.repair_document_download, name='repair_document_download'),
     path('repairs/<int:pk>/edit/',  views.repair_order_edit,      name='repair_order_edit'),
+    path('repairs/<int:pk>/<str:action>/decision/', views.repair_order_decision, name='repair_order_decision'),
+    path('repairs/<int:pk>/customer/<str:action>/', views.repair_order_customer_decision, name='repair_order_customer_decision'),
+    path('repairs/<int:pk>/cancel/', views.repair_order_cancel, name='repair_order_cancel'),
+    path('repairs/<int:pk>/finalize/<str:action>/', views.repair_order_finalize, name='repair_order_finalize'),
+    path('repairs/<int:pk>/status/<str:action>/', views.repair_order_status_review, name='repair_order_status_review'),
+    path('repairs/<int:pk>/status/', views.repair_order_status_proposal, name='repair_order_status_proposal'),
     path('repairs/<int:ro_pk>/labor/',  views.add_labor_line,     name='add_labor_line'),
     path('repairs/<int:ro_pk>/parts/',  views.add_parts_line,     name='add_parts_line'),
 
@@ -40,6 +51,7 @@ urlpatterns = [
     path('invoices/',               views.invoice_list,           name='invoice_list'),
     path('invoices/new/',           views.invoice_create,         name='invoice_create'),
     path('invoices/<int:pk>/',      views.invoice_detail,         name='invoice_detail'),
+    path('invoices/<int:pk>/download/', views.invoice_download,    name='invoice_download'),
     path('invoices/<int:pk>/pay/',  views.invoice_pay,            name='invoice_pay'),
     path('invoices/<int:pk>/edit/', views.invoice_edit,           name='invoice_edit'),
 

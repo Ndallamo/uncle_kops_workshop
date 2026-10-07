@@ -9,6 +9,9 @@
 {% endblock %}
 
 {% block content %}
+{% url 'repair_order_list' as welcome_primary_url %}
+{% url 'appointment_list' as welcome_secondary_url %}
+{% include "workshop/includes/welcome_panel.html" with welcome_role="mechanic" heading="Start with your assigned jobs" description="Review an assigned repair, submit status changes for admin approval, and check appointment requests." primary_url=welcome_primary_url primary_label="View assigned jobs" secondary_url=welcome_secondary_url secondary_label="View appointments" %}
 <div class="card mb-6">
   <div class="card-title">Your work today</div>
   <div class="context-note">See your assigned jobs, stay on top of active work, and move to the next repair with one click.</div>
@@ -22,10 +25,18 @@
     <div class="stat-value">{{ active_orders|length }}</div>
     <div class="stat-label">Active jobs</div>
   </div>
+  <div class="stat-card orange">
+    <div class="stat-value">{{ waiting_orders|length }}</div>
+    <div class="stat-label">Waiting for parts</div>
+  </div>
   <div class="stat-card green">
     <div class="stat-value">{{ pending_orders|length }}</div>
     <div class="stat-label">Pending requests</div>
   </div>
+  <a href="{% url 'invoice_list' %}?status=paid" class="stat-card green" style="text-decoration:none; color:inherit;">
+    <div class="stat-value">{{ paid_invoices }}</div>
+    <div class="stat-label">Paid invoices</div>
+  </a>
 </div>
 
 <div class="card mb-6">
@@ -37,33 +48,6 @@
     <div class="alert alert-info">Log parts and labour directly from the repair order detail workflow.</div>
   </div>
 </div>
-
-{% if pending_orders %}
-<div class="card mb-6">
-  <div class="card-title">Pending service requests</div>
-  <div class="context-note">New customer requests waiting for assignment. Assign yourself to start working on them.</div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Requested</th><th>Actions</th></tr>
-      </thead>
-      <tbody>
-        {% for order in pending_orders %}
-        <tr>
-          <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
-          <td>{{ order.vehicle.customer.full_name }}</td>
-          <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
-          <td>{{ order.date_created|date:"d M Y" }}</td>
-          <td>
-            <a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-primary btn-sm">Assign & Review</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
 
 <div class="card mb-6">
   <div class="card-title">Assignment requests</div>
@@ -89,7 +73,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted">No assignment requests yet.</td></tr>
+        <tr><td colspan="5"><div class="empty-state"><strong>No appointment requests</strong><span>New assignments from the admin will appear here.</span><a href="{% url 'appointment_list' %}" class="btn btn-secondary btn-sm">View appointments</a></div></td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -109,13 +93,27 @@
           <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
           <td>{{ order.vehicle.customer.full_name }}</td>
           <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
-          <td>{{ order.get_status_display }}</td>
           <td>
-            <a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-secondary btn-sm">Review</a>
+            {{ order.get_status_display }}
+            {% if order.pending_status %}<div class="text-muted">Proposed: {{ order.get_pending_status_display }} (awaiting admin approval)</div>{% endif %}
+          </td>
+          <td>
+            {% if order.pending_status %}
+              <span class="text-muted">Awaiting admin approval</span>
+            {% elif order.status == 'pending' %}
+              <form method="post" action="{% url 'repair_order_decision' order.pk 'accept' %}" style="display:inline;">
+                {% csrf_token %}<button type="submit" class="btn btn-primary btn-sm">Accept</button>
+              </form>
+              <form method="post" action="{% url 'repair_order_decision' order.pk 'decline' %}" style="display:inline;">
+                {% csrf_token %}<button type="submit" class="btn btn-danger btn-sm">Decline</button>
+              </form>
+            {% else %}
+              <a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-secondary btn-sm">Review</a>
+            {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-muted">No assigned jobs yet.</td></tr>
+        <tr><td colspan="5"><div class="empty-state"><strong>No jobs assigned yet</strong><span>When a repair is assigned to you, you can review it and submit status updates for approval.</span><a href="{% url 'appointment_list' %}" class="btn btn-secondary btn-sm">Check appointments</a></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

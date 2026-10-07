@@ -87,7 +87,9 @@
               <td>{{ ro.date_created|date:"d M Y" }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="4" class="text-muted">No repair orders for this vehicle.</td></tr>
+            <tr><td colspan="4"><div class="empty-state"><strong>No repair history yet</strong><span>New work linked to this vehicle will appear here.</span>
+              {% if user.userprofile.role == 'customer' %}<a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-primary btn-sm">Request service</a>{% else %}<a href="{% url 'repair_order_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary btn-sm">Create repair order</a>{% endif %}
+            </div></td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -100,7 +102,11 @@
     <div class="card" style="position:sticky; top:80px;">
       <div class="card-title">Quick Actions</div>
       <div style="display:flex; flex-direction:column; gap:12px;">
+        {% if user.userprofile.role == 'customer' %}
+        <a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-primary" style="justify-content:center;">Request service</a>
+        {% else %}
         <a href="{% url 'repair_order_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary" style="justify-content:center;">+ Create repair order</a>
+        {% endif %}
         <a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-secondary" style="justify-content:center;">📅 Book appointment</a>
         {% if user.userprofile.role != 'customer' %}
           <a href="{% url 'vehicle_edit' vehicle.pk %}" class="btn btn-secondary" style="justify-content:center;">✏️ Edit vehicle</a>

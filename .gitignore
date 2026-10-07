@@ -1,3 +1,4 @@
 .env
+.dev_encryption_key
 __pycache__/
 *.py[cod]

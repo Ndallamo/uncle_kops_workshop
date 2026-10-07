@@ -1,11 +1,12 @@
 {% extends "workshop/base.html" %}
+{% load user_extras %}
 {% block title %}Reports – Uncle Kop's Workshop{% endblock %}
 {% block page_title %}Reports & Analytics{% endblock %}
 
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
     <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-sm">Back to dashboard</a>
-    <a href="{% url 'report_export' %}" class="btn btn-primary btn-sm">Download spreadsheet</a>
+    <a href="{% url 'report_export' %}?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}" class="btn btn-primary btn-sm">Download spreadsheet</a>
     <a href="{% url 'invoice_list' %}" class="btn btn-secondary btn-sm">Invoices</a>
   </div>
 {% endblock %}
@@ -91,6 +92,12 @@
   .report-table table {
     margin-top: 10px;
   }
+  .report-data-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+  }
   @media (max-width: 1100px) {
     .report-grid {
       grid-template-columns: repeat(3, minmax(120px, 1fr));
@@ -103,6 +110,9 @@
     .report-grid {
       grid-template-columns: repeat(2, minmax(120px, 1fr));
     }
+    .report-data-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 
@@ -111,13 +121,26 @@
     <div class="card-title">Performance Overview</div>
     <div class="context-note">A quick snapshot of business health across customers, repairs, and revenue.</div>
   </div>
-  <span class="report-pill">This month</span>
+  <span class="report-pill">{{ period_label }}</span>
+</div>
+
+<div class="card mb-6">
+  <form method="get" class="flex gap-2 flex-wrap" style="align-items:flex-end;">
+    <label>From<input type="date" name="start_date" value="{{ start_date|date:'Y-m-d' }}"></label>
+    <label>To<input type="date" name="end_date" value="{{ end_date|date:'Y-m-d' }}"></label>
+    <button type="submit" class="btn btn-secondary">Apply date range</button>
+    {% if start_date or end_date %}<a href="{% url 'report' %}" class="btn btn-secondary">Clear</a>{% endif %}
+  </form>
 </div>
 
 <div class="report-grid">
   <div class="stat-card orange">
-    <div class="stat-value">R {{ total_revenue|floatformat:2 }}</div>
+    <div class="stat-value">{{ total_revenue|zar }}</div>
     <div class="stat-label">Revenue collected</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-value">{{ total_invoiced|zar }}</div>
+    <div class="stat-label">Invoices issued</div>
   </div>
   <div class="stat-card blue">
     <div class="stat-value">{{ total_customers }}</div>
@@ -135,9 +158,13 @@
     <div class="stat-value">{{ unpaid_invoices }}</div>
     <div class="stat-label">Unpaid invoices</div>
   </div>
+  <div class="stat-card yellow">
+    <div class="stat-value">{{ outstanding_balance|zar }}</div>
+    <div class="stat-label">Unpaid and partial balance</div>
+  </div>
   <div class="stat-card">
-    <div class="stat-value">R {{ average_invoice|floatformat:2 }}</div>
-    <div class="stat-label">Avg. invoice</div>
+    <div class="stat-value">{{ average_invoice|zar }}</div>
+    <div class="stat-label">Average paid invoice</div>
   </div>
 </div>
 
@@ -153,7 +180,7 @@
           <span class="text-muted" style="font-size:11px;">{{ item.label }}</span>
         </div>
       {% empty %}
-        <div class="text-muted">No paid invoices recorded yet.</div>
+        <div class="empty-state"><strong>No receipts recorded yet</strong><span>Verified receipts will appear here after staff records a payment.</span><a href="{% url 'invoice_list' %}" class="btn btn-secondary btn-sm">Review invoices</a></div>
       {% endfor %}
     </div>
   </div>
@@ -168,17 +195,55 @@
           <span class="fw-600">{{ status.total }}</span>
         </div>
         <div style="height:8px; background:rgba(255,255,255,0.06); border-radius:999px; overflow:hidden;">
-          <div style="height:100%; width:{{ status.total|floatformat:0|add:'0' }}%; background:linear-gradient(90deg,#f97316,#fbbf24); border-radius:999px;"></div>
+          <div style="height:100%; width:{{ status.percentage }}%; background:linear-gradient(90deg,#f97316,#fbbf24); border-radius:999px;"></div>
         </div>
       </div>
       {% empty %}
-      <div class="text-muted">No repair statuses available.</div>
+      <div class="empty-state"><strong>No repair activity yet</strong><span>Status totals will appear after repair orders are created.</span><a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">Create repair order</a></div>
       {% endfor %}
     </div>
   </div>
 </div>
 
-<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+<div class="report-data-grid">
+  <div class="card report-table">
+    <div class="card-title">Appointment summary</div>
+    <div class="table-wrap"><table><thead><tr><th>Status</th><th>Appointments</th></tr></thead><tbody>
+      {% for item in appointment_breakdown %}<tr><td>{{ item.assignment_status|title }}</td><td>{{ item.total }}</td></tr>
+      {% empty %}<tr><td colspan="2">No appointments in this period.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card report-table">
+    <div class="card-title">Parts consumption</div>
+    <div class="table-wrap"><table><thead><tr><th>Part</th><th>Part number</th><th>Quantity</th></tr></thead><tbody>
+      {% for item in parts_consumption %}<tr><td>{{ item.part__name }}</td><td>{{ item.part__part_number|default:'-' }}</td><td>{{ item.quantity }}</td></tr>
+      {% empty %}<tr><td colspan="3">No parts used in this period.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card report-table">
+    <div class="card-title">Mechanic workload</div>
+    <div class="table-wrap"><table><thead><tr><th>Mechanic</th><th>Repair orders</th></tr></thead><tbody>
+      {% for mechanic in mechanic_workload %}<tr><td>{{ mechanic.get_full_name|default:mechanic.username }}</td><td>{{ mechanic.job_count }}</td></tr>
+      {% empty %}<tr><td colspan="2">No assigned work in this period.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card report-table">
+    <div class="card-title">Service category demand</div>
+    <div class="table-wrap"><table><thead><tr><th>Service</th><th>Repair orders</th><th>Labour hours</th></tr></thead><tbody>
+      {% for item in service_demand %}<tr><td>{{ item.service_item__name }}</td><td>{{ item.jobs }}</td><td>{{ item.hours|floatformat:2 }}</td></tr>
+      {% empty %}<tr><td colspan="3">No labour entries in this period.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card report-table">
+    <div class="card-title">Low-stock inventory</div>
+    <div class="table-wrap"><table><thead><tr><th>Part</th><th>On hand</th><th>Reorder at</th></tr></thead><tbody>
+      {% for part in low_stock_parts %}<tr><td>{{ part.name }}</td><td>{{ part.stock_qty }}</td><td>{{ part.reorder_level }}</td></tr>
+      {% empty %}<tr><td colspan="3">No low-stock parts.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+</div>
+
+<div class="report-two-col">
   <div class="card report-table">
     <div class="card-title">Top customers</div>
     <div class="table-wrap">
@@ -190,10 +255,10 @@
           {% for customer in top_customers %}
           <tr>
             <td>{{ customer.full_name }}</td>
-            <td>R {{ customer.total_spend|default:0|floatformat:2 }}</td>
+            <td>{{ customer.total_spend|default:0|zar }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="2" class="text-muted">No paid invoices yet.</td></tr>
+          <tr><td colspan="2"><div class="empty-state"><strong>No paid invoices yet</strong><span>Completed payments will be listed here.</span><a href="{% url 'invoice_list' %}" class="btn btn-secondary btn-sm">View invoices</a></div></td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -212,10 +277,10 @@
           <tr>
             <td>INV#{{ invoice.pk }}</td>
             <td>{{ invoice.repair_order.vehicle.customer.full_name }}</td>
-            <td>R {{ invoice.service_amount|floatformat:2 }}</td>
+            <td>{{ invoice.paid_amount|zar }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="3" class="text-muted">No paid invoices yet.</td></tr>
+          <tr><td colspan="3"><div class="empty-state"><strong>No receipts recorded yet</strong><span>Verified payments will appear here after staff records a receipt.</span><a href="{% url 'invoice_list' %}" class="btn btn-secondary btn-sm">View invoices</a></div></td></tr>
           {% endfor %}
         </tbody>
       </table>

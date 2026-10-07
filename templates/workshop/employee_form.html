@@ -10,7 +10,6 @@
       <div class="form-group{% if field.errors %} has-error{% endif %}" style="margin-bottom:16px;">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
-        {% if field.help_text %}<div class="text-muted" style="font-size:12px; margin-top:6px;">{{ field.help_text }}</div>{% endif %}
         {% for error in field.errors %}
           <div class="alert alert-error">{{ error }}</div>
         {% endfor %}

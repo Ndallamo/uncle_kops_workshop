@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.conf import settings
+from decimal import Decimal, ROUND_HALF_UP
 import base64
 import os
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -94,6 +95,10 @@ class Customer(models.Model):
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
 
+    @property
+    def has_required_contact_details(self):
+        return bool((self.phone or '').strip() and (self.address or '').strip())
+
 
 # Email verification token model (store token hash, short TTL)
 class EmailVerificationToken(models.Model):
@@ -135,6 +140,7 @@ class PasswordResetToken(models.Model):
 
     @classmethod
     def generate_for_user(cls, user, ttl_minutes=30):
+        cls.objects.filter(user=user, used=False).update(used=True)
         raw = secrets.token_urlsafe(32)
         h = hashlib.sha256(raw.encode('utf-8')).hexdigest()
         expires = timezone.now() + timezone.timedelta(minutes=ttl_minutes)
@@ -205,6 +211,12 @@ class ServiceItem(models.Model):
     labor_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     labor_rate  = models.DecimalField(max_digits=8, decimal_places=2, default=0)  # per hour
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(labor_hours__gte=0), name='service_labor_hours_nonnegative'),
+            models.CheckConstraint(check=models.Q(labor_rate__gte=0), name='service_labor_rate_nonnegative'),
+        ]
+
     def __str__(self):
         return self.name
 
@@ -225,6 +237,12 @@ class Part(models.Model):
     stock_qty    = models.PositiveIntegerField(default=0)
     reorder_level = models.PositiveIntegerField(default=5)
     supplier     = models.CharField(max_length=150, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(cost_price__gte=0), name='part_cost_price_nonnegative'),
+            models.CheckConstraint(check=models.Q(sell_price__gte=0), name='part_sell_price_nonnegative'),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.part_number})"
@@ -250,6 +268,7 @@ class RepairOrder(models.Model):
     vehicle         = models.ForeignKey(Vehicle, on_delete=models.PROTECT, related_name='repair_orders')
     assigned_tech   = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='repair_orders')
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    pending_status  = models.CharField(max_length=20, choices=STATUS_CHOICES, blank=True, default='')
     description     = models.TextField(help_text="Customer complaint / work requested")
     internal_notes  = models.TextField(blank=True)
     mileage_in      = models.PositiveIntegerField(default=0)
@@ -278,6 +297,172 @@ class RepairOrder(models.Model):
         return self.total_labor + self.total_parts
 
 
+class RepairEstimate(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending customer decision'),
+        ('approved', 'Approved'),
+        ('declined', 'Declined'),
+    ]
+
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='estimates')
+    version = models.PositiveIntegerField(default=1)
+    labor_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    parts_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    decided_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='decided_repair_estimates')
+    decided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-version', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['repair_order', 'version'], name='unique_repair_estimate_version'),
+        ]
+
+    def __str__(self):
+        return f'Estimate v{self.version} for RO#{self.repair_order_id}'
+
+
+class RepairEstimateLine(models.Model):
+    LINE_TYPES = [('labor', 'Labor'), ('part', 'Part')]
+
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='estimate_lines')
+    line_type = models.CharField(max_length=10, choices=LINE_TYPES)
+    service_item = models.ForeignKey(ServiceItem, on_delete=models.PROTECT, null=True, blank=True)
+    part = models.ForeignKey(Part, on_delete=models.PROTECT, null=True, blank=True)
+    quantity = models.DecimalField(max_digits=7, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='created_estimate_lines')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'pk']
+        constraints = [
+            models.CheckConstraint(check=models.Q(quantity__gt=0), name='estimate_line_quantity_positive'),
+            models.CheckConstraint(check=models.Q(unit_price__gte=0), name='estimate_line_price_nonnegative'),
+            models.CheckConstraint(
+                check=(
+                    models.Q(line_type='labor', service_item__isnull=False, part__isnull=True)
+                    | models.Q(line_type='part', service_item__isnull=True, part__isnull=False)
+                ),
+                name='estimate_line_item_matches_type',
+            ),
+        ]
+
+    @property
+    def line_total(self):
+        return (self.quantity * self.unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+class RepairOrderEvent(models.Model):
+    EVENT_CHOICES = [
+        ('created', 'Repair order created'),
+        ('assignment', 'Mechanic assignment changed'),
+        ('status_proposed', 'Status proposed'),
+        ('status_changed', 'Status changed'),
+        ('approval', 'Customer approval recorded'),
+        ('payment', 'Payment recorded'),
+        ('work_logged', 'Repair work logged'),
+        ('cancelled', 'Repair order cancelled'),
+        ('collected', 'Vehicle collected'),
+    ]
+
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='events')
+    event_type = models.CharField(max_length=30, choices=EVENT_CHOICES)
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='repair_order_events')
+    previous_status = models.CharField(max_length=20, blank=True)
+    current_status = models.CharField(max_length=20, blank=True)
+    note = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    customer_visible = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'pk']
+
+    def __str__(self):
+        return f'{self.get_event_type_display()} for RO#{self.repair_order_id}'
+
+
+class CollectionRecord(models.Model):
+    repair_order = models.OneToOneField(RepairOrder, on_delete=models.PROTECT, related_name='collection_record')
+    collected_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='vehicle_collections')
+    collected_at = models.DateTimeField(auto_now_add=True)
+    handover_note = models.TextField(blank=True)
+
+    def __str__(self):
+        return f'Collection for RO#{self.repair_order_id}'
+
+
+class Notification(models.Model):
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
+    message = models.CharField(max_length=255)
+    link = models.CharField(max_length=255, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return self.message
+
+
+class RepairDocument(models.Model):
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.CASCADE, related_name='documents')
+    title = models.CharField(max_length=150)
+    file = models.FileField(upload_to='repair_documents/')
+    uploaded_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='uploaded_repair_documents')
+    customer_visible = models.BooleanField(default=False)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-uploaded_at', '-pk']
+
+    def __str__(self):
+        return self.title
+
+
+class ImmutableAuditLogQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError('Audit log entries are immutable.')
+
+    def delete(self):
+        raise TypeError('Audit log entries cannot be deleted.')
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise TypeError('Audit log entries are immutable.')
+
+
+class AuditLog(models.Model):
+    objects = ImmutableAuditLogQuerySet.as_manager()
+
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name='audit_entries')
+    action = models.CharField(max_length=100)
+    object_type = models.CharField(max_length=100)
+    object_id = models.PositiveBigIntegerField(null=True, blank=True)
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.PROTECT, null=True, blank=True, related_name='audit_entries')
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise TypeError('Audit log entries are immutable.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError('Audit log entries cannot be deleted.')
+
+    def __str__(self):
+        return f'{self.action} {self.object_type}#{self.object_id or ""}'.strip()
+
+
 # ─────────────────────────────────────────────
 #  LINE ITEMS
 # ─────────────────────────────────────────────
@@ -288,12 +473,18 @@ class LaborLine(models.Model):
     rate         = models.DecimalField(max_digits=8, decimal_places=2)
     notes        = models.TextField(blank=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(hours__gt=0), name='labor_line_hours_positive'),
+            models.CheckConstraint(check=models.Q(rate__gte=0), name='labor_line_rate_nonnegative'),
+        ]
+
     def __str__(self):
         return f"{self.service_item} x {self.hours}h"
 
     @property
     def line_total(self):
-        return self.hours * self.rate
+        return (self.hours * self.rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 class PartsLine(models.Model):
@@ -302,12 +493,18 @@ class PartsLine(models.Model):
     quantity     = models.PositiveIntegerField(default=1)
     unit_price   = models.DecimalField(max_digits=10, decimal_places=2)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(quantity__gt=0), name='parts_line_quantity_positive'),
+            models.CheckConstraint(check=models.Q(unit_price__gte=0), name='parts_line_price_nonnegative'),
+        ]
+
     def __str__(self):
         return f"{self.part} x {self.quantity}"
 
     @property
     def line_total(self):
-        return self.quantity * self.unit_price
+        return (self.quantity * self.unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 # ─────────────────────────────────────────────
@@ -318,6 +515,7 @@ class Invoice(models.Model):
         ('unpaid',  'Unpaid'),
         ('partial', 'Partially Paid'),
         ('paid',    'Paid'),
+        ('unverified', 'Needs Verification'),
     ]
     METHOD_CHOICES = [
         ('cash',   'Cash'),
@@ -336,6 +534,15 @@ class Invoice(models.Model):
     tax_rate        = models.DecimalField(max_digits=5, decimal_places=2, default=15)  # % VAT
     notes           = models.TextField(blank=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(service_amount__gte=0), name='invoice_service_amount_nonnegative'),
+            models.CheckConstraint(check=models.Q(discount__gte=0), name='invoice_discount_nonnegative'),
+            models.CheckConstraint(check=models.Q(discount__lte=models.F('service_amount')), name='invoice_discount_within_service_amount'),
+            models.CheckConstraint(check=models.Q(tax_rate__gte=0), name='invoice_tax_rate_nonnegative'),
+            models.CheckConstraint(check=models.Q(due_date__gte=models.F('issue_date')), name='invoice_due_date_not_before_issue'),
+        ]
+
     def __str__(self):
         return f"INV#{self.pk} – {self.repair_order}"
 
@@ -345,11 +552,65 @@ class Invoice(models.Model):
 
     @property
     def tax_amount(self):
-        return self.subtotal * (max(self.tax_rate, 0) / 100)
+        tax_rate = max(Decimal(str(self.tax_rate)), Decimal('0.00'))
+        return (self.subtotal * (tax_rate / Decimal('100'))).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
 
     @property
     def total_due(self):
-        return self.subtotal + self.tax_amount
+        return (self.subtotal + self.tax_amount).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+
+    @property
+    def paid_amount(self):
+        if hasattr(self, 'report_paid_amount'):
+            return self.report_paid_amount or Decimal('0.00')
+        return self.payments.aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+
+    @property
+    def balance_due(self):
+        return max(self.total_due - self.paid_amount, Decimal('0.00'))
+
+    def refresh_payment_status(self, *, payment_method=None):
+        paid_amount = self.paid_amount
+        if paid_amount >= self.total_due and paid_amount > 0:
+            self.payment_status = 'paid'
+        elif paid_amount > 0:
+            self.payment_status = 'partial'
+        else:
+            self.payment_status = 'unpaid'
+        update_fields = ['payment_status']
+        if payment_method:
+            self.payment_method = payment_method
+            update_fields.append('payment_method')
+        self.save(update_fields=update_fields)
+
+
+class InvoicePayment(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='payments')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_method = models.CharField(max_length=10, choices=Invoice.METHOD_CHOICES)
+    reference = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+    received_at = models.DateTimeField(default=timezone.now)
+    recorded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='recorded_invoice_payments',
+    )
+
+    class Meta:
+        ordering = ['-received_at', '-pk']
+        constraints = [
+            models.CheckConstraint(check=models.Q(amount__gt=0), name='invoice_payment_amount_positive'),
+        ]
+
+    def __str__(self):
+        return f"Payment R {self.amount} for INV#{self.invoice_id}"
 
 
 # ─────────────────────────────────────────────
@@ -364,6 +625,7 @@ class Appointment(models.Model):
 
     customer    = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='appointments')
     vehicle     = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='appointments')
+    repair_order = models.ForeignKey(RepairOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name='appointments')
     date_time   = models.DateTimeField()
     duration    = models.PositiveIntegerField(default=60, help_text="Duration in minutes")
     service_desc = models.TextField()
@@ -377,3 +639,22 @@ class Appointment(models.Model):
 
     def __str__(self):
         return f"{self.customer} – {self.date_time:%Y-%m-%d %H:%M}"
+
+    @classmethod
+    def has_schedule_conflict(cls, *, mechanic, date_time, duration, exclude_pk=None):
+        if not mechanic or not date_time:
+            return False
+
+        requested_end = date_time + timezone.timedelta(minutes=duration)
+        accepted_appointments = cls.objects.filter(
+            assigned_mechanic=mechanic,
+            assignment_status='accepted',
+        ).only('date_time', 'duration')
+        if exclude_pk:
+            accepted_appointments = accepted_appointments.exclude(pk=exclude_pk)
+
+        return any(
+            date_time < appointment.date_time + timezone.timedelta(minutes=appointment.duration)
+            and appointment.date_time < requested_end
+            for appointment in accepted_appointments
+        )
