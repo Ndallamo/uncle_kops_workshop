@@ -175,6 +175,7 @@ from .forms import (
     PartForm,
     ServiceItemForm,
     UserRegistrationForm,
+    EmailOrUsernameAuthenticationForm,
     EmployeeForm,
     EmployeeEditForm,
 )
@@ -217,7 +218,7 @@ def login_view(request):
         messages.success(request, f'A new verification email was sent to {user.email}. Check your inbox and spam folder.')
         return redirect('login')
 
-    form = AuthenticationForm(request, data=request.POST or None)
+    form = EmailOrUsernameAuthenticationForm(request, data=request.POST or None)
     needs_verification = False
 
     if request.method == 'POST' and form.is_valid():
@@ -254,6 +255,15 @@ def login_view(request):
         }
     )
 
+def _unique_username_from_email(email):
+    base = (email or 'customer').split('@')[0][:120] or 'customer'
+    candidate, n = base, 1
+    while User.objects.filter(username__iexact=candidate).exists():
+        n += 1
+        candidate = f'{base}{n}'
+    return candidate
+
+
 def register(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
@@ -264,7 +274,8 @@ def register(request):
         if form.is_valid():
             # Create user but do NOT auto-login until email verified
             user = form.save(commit=False)
-            role = form.cleaned_data.get('role')
+            role = 'customer'
+            user.username = _unique_username_from_email(user.email)
 
             if role == 'admin':
                 user.is_staff = True
@@ -2515,6 +2526,39 @@ def appointment_list(request):
     })
 
 
+DUPLICATE_REQUEST_WINDOW = timedelta(hours=24)
+
+
+def _find_matching_vehicle(customer, data):
+    vehicles = Vehicle.objects.filter(customer=customer)
+    plate = (data.get('license_plate') or '').strip()
+    vin = (data.get('vin') or '').strip()
+    if plate:
+        match = vehicles.filter(license_plate__iexact=plate).first()
+        if match:
+            return match
+    if vin:
+        match = vehicles.filter(vin__iexact=vin).first()
+        if match:
+            return match
+    make = (data.get('make') or '').strip()
+    model = (data.get('model') or '').strip()
+    year = data.get('year') or 0
+    if make and model and year:
+        return vehicles.filter(make__iexact=make, model__iexact=model, year=year).first()
+    return None
+
+
+def _recent_open_request_exists(vehicle, description=''):
+    recent = RepairOrder.objects.filter(
+        vehicle=vehicle,
+        date_created__gte=timezone.now() - DUPLICATE_REQUEST_WINDOW,
+    ).exclude(status__in=['cancelled', 'completed'])
+    if recent.filter(status='pending').exists():
+        return True
+    description = (description or '').strip()
+    return bool(description) and recent.filter(description__iexact=description).exists()
+
 @login_required
 def appointment_create(request):
     if not (_is_admin(request.user) or _role(request.user) == 'customer'):
@@ -2548,29 +2592,31 @@ def appointment_create(request):
             if not vehicle_id:
                 manual_vehicle = form.manual_vehicle_data()
 
-                if (
-                    any(
-                        value not in (None, '', 0)
-                        for value in manual_vehicle.values()
-                    )
-                    and customer
-                ):
-                    vehicle = Vehicle.objects.create(
-                        customer=customer,
-                        make=manual_vehicle['make'] or 'Unknown',
-                        model=manual_vehicle['model'] or '',
-                        year=manual_vehicle['year'] or 0,
-                        vin=manual_vehicle['vin'] or '',
-                        license_plate=manual_vehicle['license_plate'] or '',
-                        color=manual_vehicle['color'] or '',
-                        mileage=manual_vehicle['mileage'] or 0,
-                        service_plan=manual_vehicle['service_plan'] or '',
-                        recent_service_history=manual_vehicle['recent_service_history'] or '',
-                        notes=manual_vehicle['notes'] or '',
-                    )
-
+                if any(value not in (None, '', 0) for value in manual_vehicle.values()):
+                    vehicle = _find_matching_vehicle(customer, manual_vehicle)
+                    if vehicle is None:
+                        vehicle = Vehicle.objects.create(
+                            customer=customer,
+                            make=manual_vehicle['make'] or 'Unknown',
+                            model=manual_vehicle['model'] or '',
+                            year=manual_vehicle['year'] or 0,
+                            vin=manual_vehicle['vin'] or '',
+                            license_plate=manual_vehicle['license_plate'] or '',
+                            color=manual_vehicle['color'] or '',
+                            mileage=manual_vehicle['mileage'] or 0,
+                            service_plan=manual_vehicle['service_plan'] or '',
+                            recent_service_history=manual_vehicle['recent_service_history'] or '',
+                            notes=manual_vehicle['notes'] or '',
+                        )
                     appt.vehicle = vehicle
 
+            if appt.vehicle_id and _recent_open_request_exists(appt.vehicle, appt.service_desc):
+                form.add_error(
+                    None,
+                    'A service request for this vehicle was already submitted recently and is still open. '
+                    'Please check "My Appointments" - if it was a mistake, you can delete it there before booking again.',
+                )
+                return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
         assigned_mechanic = form.cleaned_data.get('assigned_mechanic')
         assignment_status = form.cleaned_data.get('assignment_status') or 'pending'
         if assigned_mechanic and assignment_status == 'accepted':

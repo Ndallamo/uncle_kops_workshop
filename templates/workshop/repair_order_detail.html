@@ -4,11 +4,15 @@
 {% block page_title %}Repair Order #{{ order.pk }}{% endblock %}
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    {% if request.user.userprofile.role != 'customer' %}
     <a href="{% url 'repair_order_edit' order.pk %}" class="btn btn-secondary btn-sm">Edit RO</a>
+    {% endif %}
     {% if is_admin %}
       <a href="{% url 'invoice_create' %}?ro={{ order.pk }}" class="btn btn-primary btn-sm">Create invoice</a>
     {% endif %}
+    {% if request.user.userprofile.role != 'customer' %}
     <a href="{% url 'repair_order_list' %}" class="btn btn-secondary btn-sm">← All ROs</a>
+    {% endif %}
   </div>
 {% endblock %}
 

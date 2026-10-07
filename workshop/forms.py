@@ -1,6 +1,6 @@
 from django import forms
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 from PIL import Image, UnidentifiedImageError
@@ -637,40 +637,44 @@ class EmployeeEditForm(forms.ModelForm):
 
 
 class UserRegistrationForm(UserCreationForm):
-    ROLE_CHOICES = [
-        ('customer', 'Customer'),
-    ]
-
-    email = forms.EmailField(required=True)
     first_name = forms.CharField(max_length=30, required=True)
     last_name = forms.CharField(max_length=30, required=True)
+    email = forms.EmailField(required=True)
     phone = forms.CharField(max_length=20, required=False)
     address = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False)
-    role = forms.ChoiceField(choices=ROLE_CHOICES, required=True, help_text='Choose Customer to create a customer account.')
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'first_name', 'last_name', 'phone', 'address', 'role', 'password1', 'password2']
+        fields = ['first_name', 'last_name', 'email', 'phone', 'address', 'password1', 'password2']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['username'].help_text = 'Choose a username to use when signing in.'
-        self.fields['email'].help_text = 'Enter a valid email address for account verification and communication.'
+        self.fields['email'].help_text = 'Enter a valid email address for account verification and sign-in.'
         self.fields['first_name'].help_text = 'Enter your first name.'
         self.fields['last_name'].help_text = 'Enter your surname.'
         self.fields['phone'].help_text = 'Optional; provide a phone number the workshop can use to contact you.'
         self.fields['phone'].widget.attrs['placeholder'] = 'e.g. 071 234 5678'
         self.fields['address'].help_text = 'Optional; include street, suburb, city and postal code.'
         self.fields['address'].widget.attrs['placeholder'] = 'Street address, suburb, city and postal code'
-        self.fields['username'].widget.attrs['placeholder'] = 'Choose a unique username'
         self.fields['email'].widget.attrs['placeholder'] = 'Enter your email address'
         self.fields['first_name'].widget.attrs['placeholder'] = 'Enter your First name'
         self.fields['last_name'].widget.attrs['placeholder'] = 'Enter your Surname'
         self.fields['password1'].widget.attrs['placeholder'] = 'At least 8 characters'
         self.fields['password2'].widget.attrs['placeholder'] = 'Re-enter your password'
-
     def clean_email(self):
         email = self.cleaned_data.get('email')
         if User.objects.filter(email__iexact=email).exists():
             raise forms.ValidationError('A user with that email already exists.')
         return email
+
+class EmailOrUsernameAuthenticationForm(AuthenticationForm):
+    """Lets users sign in with their email address or their username."""
+
+    def clean_username(self):
+        value = (self.cleaned_data.get('username') or '').strip()
+        if '@' in value:
+            matches = User.objects.filter(email__iexact=value, is_active=True)
+            if matches.count() == 1:
+                return matches.first().get_username()
+        return value
+

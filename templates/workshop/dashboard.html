@@ -44,7 +44,9 @@
   <div class="card">
     <div class="flex items-center justify-between mb-4">
       <div class="card-title">Recent Repair Orders</div>
+      {% if request.user.userprofile.role == 'admin' or request.user.is_staff %}
       <a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">+ New RO</a>
+      {% endif %}
     </div>
     <div class="table-wrap">
       <table>

@@ -939,18 +939,16 @@ class RegistrationTests(TestCase):
     @patch('workshop.views.send_verification_email', side_effect=RuntimeError('smtp down'))
     def test_registration_survives_email_failure_and_unverified_user_can_resend(self, mocked_send):
         self.client.post(reverse('register'), {
-            'username': 'mailfail',
             'email': 'mailfail@example.com',
             'first_name': 'Mail',
             'last_name': 'Fail',
-            'role': 'customer',
             'password1': 'A-strong-pass-123',
             'password2': 'A-strong-pass-123',
         })
-        self.assertTrue(User.objects.filter(username='mailfail').exists())
+        self.assertTrue(User.objects.filter(email='mailfail@example.com').exists())
 
         mocked_send.side_effect = None
-        response = self.client.post(reverse('login'), {'username': 'mailfail', 'password': 'A-strong-pass-123'})
+        response = self.client.post(reverse('login'), {'username': 'mailfail@example.com', 'password': 'A-strong-pass-123'})
         self.assertContains(response, 'Resend verification email')
 
         mocked_send.reset_mock()
@@ -967,11 +965,9 @@ class RegistrationTests(TestCase):
     @patch('workshop.views.send_verification_email')
     def test_invalid_registration_saves_nothing(self, send_verification_email):
         base = {
-            'username': 'badcustomer',
             'email': 'bad@example.com',
             'first_name': 'Bad',
             'last_name': 'Customer',
-            'role': 'customer',
             'password1': 'A-strong-pass-123',
             'password2': 'A-strong-pass-123',
         }
@@ -980,9 +976,35 @@ class RegistrationTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertFalse(response.context['form'].is_valid())
 
-        self.assertFalse(User.objects.filter(username='badcustomer').exists())
+        self.assertFalse(User.objects.filter(email='bad@example.com').exists())
         self.assertFalse(Customer.objects.filter(email__in=['bad@example.com', 'not-an-email']).exists())
         send_verification_email.assert_not_called()
+
+    def test_register_form_has_no_username_or_role_and_email_follows_last_name(self):
+        page = self.client.get(reverse('register'))
+        self.assertNotContains(page, 'id_username')
+        self.assertNotContains(page, 'id_role')
+        self.assertNotContains(page, 'Choose a role')
+        html = page.content.decode()
+        self.assertLess(html.index('id_last_name'), html.index('id_email'))
+        self.assertLess(html.index('id_email'), html.index('id_password1'))
+
+    @patch('workshop.views.send_verification_email')
+    def test_usernames_are_unique_and_customer_can_login_with_email(self, _send):
+        for first in ('A', 'B'):
+            self.client.post(reverse('register'), {
+                'email': f'same{first}@example.com' if False else 'same@example.com' if first == 'A' else 'same@other.com',
+                'first_name': first, 'last_name': 'X',
+                'password1': 'A-strong-pass-123', 'password2': 'A-strong-pass-123',
+            })
+        self.assertEqual(sorted(User.objects.filter(email__in=['same@example.com', 'same@other.com']).values_list('username', flat=True)), ['same', 'same2'])
+        user = User.objects.get(email='same@example.com')
+        user.userprofile.is_verified = True
+        user.userprofile.save()
+        Customer.objects.filter(email=user.email).update(phone='0712345678', address='1 Main St')
+        response = self.client.post(reverse('login'), {'username': 'SAME@example.com', 'password': 'A-strong-pass-123'})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(int(self.client.session['_auth_user_id']), user.pk)
 
     def test_register_page_has_show_password_toggle(self):
         page = self.client.get(reverse('register'))
@@ -995,17 +1017,16 @@ class RegistrationTests(TestCase):
         self.assertNotContains(page, 'Address')
 
         response = self.client.post(reverse('register'), {
-            'username': 'newcustomer',
             'email': 'newcustomer@example.com',
             'first_name': 'New',
             'last_name': 'Customer',
-            'role': 'customer',
             'password1': 'A-strong-pass-123',
             'password2': 'A-strong-pass-123',
         })
 
         self.assertRedirects(response, reverse('login'))
-        user = User.objects.get(username='newcustomer')
+        user = User.objects.get(email='newcustomer@example.com')
+        self.assertEqual(user.username, 'newcustomer')
         self.assertEqual(user.email, 'newcustomer@example.com')
         self.assertEqual(user.userprofile.role, 'customer')
         customer = Customer.objects.get(email=user.email)
@@ -2380,6 +2401,43 @@ class MechanicJobAssignmentTests(TestCase):
         order_audit = AuditLog.objects.get(action='created', object_id=appointment.repair_order_id)
         self.assertEqual(order_audit.actor, customer_user)
         self.assertEqual(order_audit.details['appointment_id'], appointment.pk)
+
+    @patch('workshop.views.send_service_request_confirmation')
+    def test_similar_pending_request_for_same_vehicle_is_blocked(self, send_confirmation):
+        customer_user = User.objects.create_user(username='dup-customer', email=self.customer.email, password='test-password')
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.customer.phone = '0712345678'
+        self.customer.address = '42 Main Street'
+        self.customer.save(update_fields=['phone', 'address'])
+        RepairOrder.objects.filter(pk=self.order.pk).update(status='in_progress')
+        self.client.force_login(customer_user)
+        payload = {'vehicle': self.vehicle.pk, 'date_time': '2030-05-20T10:30', 'service_desc': 'Oil change'}
+
+        self.assertRedirects(self.client.post(reverse('appointment_create'), payload), reverse('dashboard'))
+        response = self.client.post(reverse('appointment_create'), {**payload, 'service_desc': 'Tyre rotation'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'already submitted recently')
+        self.assertEqual(Appointment.objects.filter(vehicle=self.vehicle, service_desc__in=['Oil change', 'Tyre rotation']).count(), 1)
+
+    @patch('workshop.views.send_service_request_confirmation')
+    def test_manual_vehicle_entry_reuses_existing_vehicle_and_blocks_duplicate(self, send_confirmation):
+        customer_user = User.objects.create_user(username='dup2', email=self.customer.email, password='test-password')
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.customer.phone = '0712345678'
+        self.customer.address = '42 Main Street'
+        self.customer.save(update_fields=['phone', 'address'])
+        RepairOrder.objects.filter(pk=self.order.pk).update(status='in_progress')
+        self.client.force_login(customer_user)
+        before = Vehicle.objects.filter(customer=self.customer).count()
+        payload = {
+            'vehicle_make': self.vehicle.make.upper(), 'vehicle_model': self.vehicle.model,
+            'vehicle_year': self.vehicle.year, 'date_time': '2030-05-20T10:30', 'service_desc': 'Oil change',
+        }
+        first = self.client.post(reverse('appointment_create'), payload)
+        second = self.client.post(reverse('appointment_create'), payload)
+        self.assertEqual(Vehicle.objects.filter(customer=self.customer).count(), before)
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 200)
 
     def test_mechanic_status_menu_only_offers_admin_reviewable_proposals(self):
         self.client.force_login(self.mechanic)

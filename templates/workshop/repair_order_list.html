@@ -4,7 +4,9 @@
 {% block page_title %}Repair Orders{% endblock %}
 {% block topbar_actions %}
   <div class="flex gap-2" style="flex-wrap:wrap; align-items:center;">
+    {% if request.user.userprofile.role == 'admin' or request.user.is_staff %}
     <a href="{% url 'repair_order_create' %}" class="btn btn-primary btn-sm">+ New RO</a>
+    {% endif %}
     <a href="{% url 'repair_order_list' %}?status=pending" class="btn btn-secondary btn-sm">Pending</a>
     <a href="{% url 'repair_order_list' %}?status=in_progress" class="btn btn-secondary btn-sm">In progress</a>
   </div>
