@@ -867,6 +867,30 @@ class WorkflowAdminGuardTests(TestCase):
 
 class RegistrationTests(TestCase):
     @patch('workshop.views.send_verification_email')
+    def test_invalid_registration_saves_nothing(self, send_verification_email):
+        base = {
+            'username': 'badcustomer',
+            'email': 'bad@example.com',
+            'first_name': 'Bad',
+            'last_name': 'Customer',
+            'role': 'customer',
+            'password1': 'A-strong-pass-123',
+            'password2': 'A-strong-pass-123',
+        }
+        for override in ({'password2': 'different-pass-456'}, {'email': 'not-an-email'}, {'password1': '123', 'password2': '123'}):
+            response = self.client.post(reverse('register'), {**base, **override})
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.context['form'].is_valid())
+
+        self.assertFalse(User.objects.filter(username='badcustomer').exists())
+        self.assertFalse(Customer.objects.filter(email__in=['bad@example.com', 'not-an-email']).exists())
+        send_verification_email.assert_not_called()
+
+    def test_register_page_has_show_password_toggle(self):
+        page = self.client.get(reverse('register'))
+        self.assertContains(page, 'pw-toggle')
+
+    @patch('workshop.views.send_verification_email')
     def test_customer_can_register_without_contact_details(self, send_verification_email):
         page = self.client.get(reverse('register'))
         self.assertNotContains(page, 'Phone')
