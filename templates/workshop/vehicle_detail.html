@@ -42,7 +42,7 @@
         </div>
         <div>
           <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Mileage</div>
-          {{ vehicle.mileage|floatformat:"0" }} km
+          {% if vehicle.mileage %}{{ vehicle.mileage|floatformat:"0" }} km{% else %}Not recorded{% endif %}
         </div>
       </div>
 
@@ -88,7 +88,7 @@
             </tr>
             {% empty %}
             <tr><td colspan="4"><div class="empty-state"><strong>No repair history yet</strong><span>New work linked to this vehicle will appear here.</span>
-              {% if user.userprofile.role == 'customer' %}<a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-primary btn-sm">Request service</a>{% else %}<a href="{% url 'repair_order_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary btn-sm">Create repair order</a>{% endif %}
+              {% if user.userprofile.role == 'customer' %}<a href="{% url 'appointment_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary btn-sm">Book new service</a>{% else %}<a href="{% url 'repair_order_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary btn-sm">Create repair order</a>{% endif %}
             </div></td></tr>
             {% endfor %}
           </tbody>
@@ -103,11 +103,11 @@
       <div class="card-title">Quick Actions</div>
       <div style="display:flex; flex-direction:column; gap:12px;">
         {% if user.userprofile.role == 'customer' %}
-        <a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-primary" style="justify-content:center;">Request service</a>
+        <a href="{% url 'appointment_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary" style="justify-content:center;">Book new service</a>
         {% else %}
         <a href="{% url 'repair_order_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary" style="justify-content:center;">+ Create repair order</a>
         {% endif %}
-        <a href="{% url 'appointment_create' %}?customer={{ vehicle.customer.pk }}" class="btn btn-secondary" style="justify-content:center;">📅 Book appointment</a>
+        <a href="{% url 'appointment_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-secondary" style="justify-content:center;">Book appointment</a>
         {% if user.userprofile.role != 'customer' %}
           <a href="{% url 'vehicle_edit' vehicle.pk %}" class="btn btn-secondary" style="justify-content:center;">✏️ Edit vehicle</a>
         {% endif %}

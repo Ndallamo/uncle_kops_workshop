@@ -178,7 +178,7 @@ if DEBUG:
             'NAME': os.environ.get('DB_NAME', 'uncle_kops_db'),
             'USER': os.environ.get('DB_USER', 'django_user'),
             'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+            'HOST': os.environ.get('DB_HOST', '10.30.9.109'),
             'PORT': os.environ.get('DB_PORT', '3306'),
             'CONN_MAX_AGE': DB_CONN_MAX_AGE,
             'CONN_HEALTH_CHECKS': True,

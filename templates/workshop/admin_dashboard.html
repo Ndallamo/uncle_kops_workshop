@@ -73,6 +73,28 @@
 </div>
 
 <div class="card mb-6">
+  <div class="card-title">Customer-approved repairs awaiting mechanic assignment</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>RO#</th><th>Customer</th><th>Vehicle</th><th>Description</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for order in approved_unassigned_orders %}
+        <tr>
+          <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
+          <td>{{ order.vehicle.customer.full_name }}</td>
+          <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
+          <td>{{ order.description|truncatechars:100 }}</td>
+          <td><a href="{% url 'repair_order_edit' order.pk %}" class="btn btn-primary btn-sm">Assign mechanic</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5"><div class="empty-state"><strong>No approved repairs need assignment</strong><span>Customer-approved unassigned repairs will appear here.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-6">
   <div class="card-title">Status updates awaiting approval</div>
   <div class="table-wrap">
     <table>
@@ -85,7 +107,7 @@
           <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
           <td>{{ order.vehicle.customer.full_name }}</td>
           <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
-          <td>{{ order.assigned_tech.get_full_name|default:order.assigned_tech.username }}</td>
+          <td>{% if order.assigned_tech %}{{ order.assigned_tech.get_full_name|default:order.assigned_tech.username }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
           <td>{{ order.get_status_display }}</td>
           <td class="fw-600 text-orange">{{ order.get_pending_status_display }}</td>
           <td>
@@ -93,7 +115,9 @@
               {% csrf_token %}<button type="submit" class="btn btn-primary btn-sm">Approve</button>
             </form>
             <form method="post" action="{% url 'repair_order_status_review' order.pk 'reject' %}" style="display:inline;">
-              {% csrf_token %}<button type="submit" class="btn btn-secondary btn-sm">Reject</button>
+              {% csrf_token %}
+              <label>Reason for rejection<textarea name="reason" rows="2" required placeholder="Explain why this status update was rejected."></textarea></label>
+              <button type="submit" class="btn btn-secondary btn-sm">Reject</button>
             </form>
           </td>
         </tr>

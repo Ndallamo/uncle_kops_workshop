@@ -110,7 +110,7 @@
 
       <div style="margin-top:16px;">
         <div class="text-muted" style="font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Description / Complaint</div>
-        <p style="font-size:14px; line-height:1.6;">{{ order.description }}</p>
+        <p style="font-size:14px; line-height:1.6;">{{ order.description|linebreaksbr }}</p>
       </div>
 
       {% if order.internal_notes and not is_customer %}
@@ -135,31 +135,152 @@
           {% endfor %}
         </div>
       </div>
-      {% if estimate_line_form and not order.approved %}
-      <form method="post" action="{% url 'repair_estimate_line_add' order.pk %}" style="margin-top:16px;">
+      {% if estimate_labor_formset and not order.approved %}
+      <form method="post" action="{% url 'repair_estimate_line_add' order.pk %}" id="estimate-items-form" style="margin-top:20px;">
         {% csrf_token %}
-        {{ estimate_line_form.non_field_errors }}
-        {% for field in estimate_line_form %}
-          {% if field.is_hidden %}
-            {{ field }}
-          {% else %}
-            <div class="form-group">
-              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-              {{ field }}
-              {% for error in field.errors %}
-                <div class="alert alert-error">{{ error }}</div>
-              {% endfor %}
-            </div>
-          {% endif %}
-        {% endfor %}
-        <button type="submit" class="btn btn-primary">Add estimate line</button>
+        <section aria-labelledby="estimate-labor-heading" style="margin-bottom:24px;">
+          <h3 id="estimate-labor-heading" style="margin:0 0 12px; font-size:16px;">Labor / Services</h3>
+          {{ estimate_labor_formset.management_form }}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Service item</th><th>Rate</th><th>Hours</th><th>Total</th><th>Action</th></tr></thead>
+              <tbody id="labor-rows">
+                <tr id="labor-empty"><td colspan="5" class="text-muted">No labor services added. Add only the services needed for this repair.</td></tr>
+                {% for row in estimate_labor_formset %}
+                <tr data-estimate-row>
+                  <td><input type="search" data-picker-search placeholder="Search services..." aria-label="Search labor services">{{ row.service_item }}</td><td data-unit-price>R 0.00</td><td>{{ row.hours }}</td><td data-line-total>R 0.00</td>
+                  <td><button type="button" class="btn btn-secondary btn-sm" data-remove-row>Remove</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% with row=estimate_labor_formset.empty_form %}
+          <template id="labor-row-template">
+            <tr data-estimate-row>
+              <td><input type="search" data-picker-search placeholder="Search services..." aria-label="Search labor services">{{ row.service_item }}</td><td data-unit-price>R 0.00</td><td>{{ row.hours }}</td><td data-line-total>R 0.00</td>
+              <td><button type="button" class="btn btn-secondary btn-sm" data-remove-row>Remove</button></td>
+            </tr>
+          </template>
+          {% endwith %}
+          <button type="button" class="btn btn-secondary btn-sm" data-add-row="labor">+ Add Labor Service</button>
+        </section>
+
+        <section aria-labelledby="estimate-parts-heading" style="margin-bottom:24px;">
+          <h3 id="estimate-parts-heading" style="margin:0 0 12px; font-size:16px;">Parts / Materials</h3>
+          {{ estimate_part_formset.management_form }}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Part description</th><th>In stock</th><th>Unit price</th><th>Quantity</th><th>Total</th><th>Action</th></tr></thead>
+              <tbody id="parts-rows">
+                <tr id="parts-empty"><td colspan="6" class="text-muted">No parts added. Add only the parts required for this repair.</td></tr>
+                {% for row in estimate_part_formset %}
+                <tr data-estimate-row>
+                  <td><input type="search" data-picker-search placeholder="Search parts..." aria-label="Search parts">{{ row.part }}</td><td data-stock>--</td><td data-unit-price>R 0.00</td><td>{{ row.quantity }}</td><td data-line-total>R 0.00</td>
+                  <td><button type="button" class="btn btn-secondary btn-sm" data-remove-row>Remove</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% with row=estimate_part_formset.empty_form %}
+          <template id="parts-row-template">
+            <tr data-estimate-row>
+              <td><input type="search" data-picker-search placeholder="Search parts..." aria-label="Search parts">{{ row.part }}</td><td data-stock>--</td><td data-unit-price>R 0.00</td><td>{{ row.quantity }}</td><td data-line-total>R 0.00</td>
+              <td><button type="button" class="btn btn-secondary btn-sm" data-remove-row>Remove</button></td>
+            </tr>
+          </template>
+          {% endwith %}
+          <button type="button" class="btn btn-secondary btn-sm" data-add-row="parts">+ Add Part</button>
+        </section>
+
+        <div class="form-group">
+          <label for="{{ estimate_notes_form.notes.id_for_label }}">{{ estimate_notes_form.notes.label }}</label>
+          {{ estimate_notes_form.notes }}
+        </div>
+        <button type="submit" class="btn btn-primary">Add items to estimate</button>
       </form>
+      {{ estimate_catalog|json_script:"estimate-catalog-data" }}
+      <script>
+        (() => {
+          const catalog = JSON.parse(document.getElementById('estimate-catalog-data').textContent);
+          const formatRand = (amount) => `R ${Number(amount || 0).toFixed(2)}`;
+
+          function updateEstimateRow(row) {
+            const labor = row.closest('#labor-rows') !== null;
+            const prefix = labor ? 'labor' : 'parts';
+            const selected = row.querySelector('select')?.value;
+            const item = catalog[prefix][selected];
+            const quantity = Number(row.querySelector('.estimate-quantity')?.value || 0);
+            const unitPrice = labor ? item : item?.price;
+            row.querySelector('[data-unit-price]').textContent = formatRand(unitPrice);
+            if (!labor) row.querySelector('[data-stock]').textContent = item ? item.stock : '--';
+            row.querySelector('[data-line-total]').textContent = formatRand(Number(unitPrice || 0) * quantity);
+          }
+
+          function renumberRows(prefix) {
+            const rows = document.querySelectorAll(`#${prefix}-rows [data-estimate-row]`);
+            rows.forEach((row, index) => {
+              row.querySelectorAll('[name], [id], [for]').forEach((element) => {
+                for (const attribute of ['name', 'id', 'for']) {
+                  const value = element.getAttribute(attribute);
+                  if (value) element.setAttribute(attribute, value.replace(new RegExp(`${prefix}-\\d+-`), `${prefix}-${index}-`));
+                }
+              });
+              updateEstimateRow(row);
+            });
+            document.querySelector(`[name="${prefix}-TOTAL_FORMS"]`).value = rows.length;
+            document.getElementById(`${prefix}-empty`).hidden = rows.length > 0;
+          }
+
+          document.querySelectorAll('[data-add-row]').forEach((button) => {
+            button.addEventListener('click', () => {
+              const prefix = button.dataset.addRow;
+              const totalForms = document.querySelector(`[name="${prefix}-TOTAL_FORMS"]`);
+              const index = Number(totalForms.value);
+              const template = document.getElementById(`${prefix}-row-template`).innerHTML.replaceAll('__prefix__', index);
+              document.getElementById(`${prefix}-rows`).insertAdjacentHTML('beforeend', template);
+              totalForms.value = index + 1;
+              document.getElementById(`${prefix}-empty`).hidden = true;
+              updateEstimateRow(document.querySelector(`#${prefix}-rows [data-estimate-row]:last-child`));
+            });
+          });
+
+          document.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-remove-row]');
+            if (!button) return;
+            const body = button.closest('tbody');
+            const prefix = body.id === 'labor-rows' ? 'labor' : 'parts';
+            button.closest('[data-estimate-row]').remove();
+            renumberRows(prefix);
+          });
+
+          document.addEventListener('change', (event) => {
+            const row = event.target.closest('[data-estimate-row]');
+            if (row && (event.target.matches('select') || event.target.matches('.estimate-quantity'))) updateEstimateRow(row);
+          });
+          document.addEventListener('input', (event) => {
+            const row = event.target.closest('[data-estimate-row]');
+            if (!row) return;
+            if (event.target.matches('.estimate-quantity')) updateEstimateRow(row);
+            if (event.target.matches('[data-picker-search]')) {
+              const query = event.target.value.trim().toLowerCase();
+              const picker = row.querySelector('select');
+              Array.from(picker.options).forEach((option, index) => {
+                option.hidden = index > 0 && !option.text.toLowerCase().includes(query);
+              });
+              if (picker.selectedOptions[0]?.hidden) picker.value = '';
+              updateEstimateRow(row);
+            }
+          });
+        })();
+      </script>
       {% endif %}
       {% endif %}
     </div>
 
     <div class="card mb-4">
-      <div class="card-title">Repair Timeline</div>
+      <div class="card-title" id="repair-timeline">Repair Timeline</div>
       <div style="display:flex; flex-direction:column; gap:14px;">
         {% for event in events %}
         <div style="border-left:2px solid var(--orange); padding-left:12px;">
@@ -370,7 +491,7 @@
           <span class="fw-600">{{ invoice.subtotal|zar }}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-muted">Tax ({{ invoice.tax_rate|floatformat:"2" }}%)</span>
+          <span class="text-muted">VAT (15%)</span>
           <span class="fw-600">{{ invoice.tax_amount|zar }}</span>
         </div>
         <div style="height:1px; background:var(--border);"></div>

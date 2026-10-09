@@ -61,12 +61,21 @@
         <tr>
           <td>{{ appt.customer.full_name }}</td>
           <td>{{ appt.vehicle.year }} {{ appt.vehicle.make }} {{ appt.vehicle.model }}</td>
-          <td>{{ appt.date_time|date:"d M Y, H:i" }}</td>
+          <td>
+            {{ appt.date_time|date:"d M Y, H:i" }}
+            {% if appt.assignment_reason %}<div class="text-muted" style="font-size:12px; margin-top:4px;">Feedback: {{ appt.assignment_reason }}</div>{% endif %}
+          </td>
           <td>{{ appt.get_assignment_status_display }}</td>
           <td>
             {% if appt.assignment_status == 'pending' %}
-              <a href="{% url 'appointment_decision' appt.pk 'accept' %}" class="btn btn-primary btn-sm">Accept</a>
-              <a href="{% url 'appointment_decision' appt.pk 'decline' %}" class="btn btn-danger btn-sm">Decline</a>
+              <form method="post" action="{% url 'appointment_decision' appt.pk 'accept' %}" style="display:inline;">
+                {% csrf_token %}<button type="submit" class="btn btn-primary btn-sm">Accept</button>
+              </form>
+              <form method="post" action="{% url 'appointment_decision' appt.pk 'decline' %}">
+                {% csrf_token %}
+                <label>Reason for declining<textarea name="reason" rows="2" required placeholder="Explain why you cannot take this service."></textarea></label>
+                <button type="submit" class="btn btn-danger btn-sm">Decline</button>
+              </form>
             {% else %}
               <span class="text-muted">{{ appt.get_assignment_status_display }}</span>
             {% endif %}
@@ -98,6 +107,7 @@
             {% if order.pending_status %}<div class="text-muted">Proposed: {{ order.get_pending_status_display }} (awaiting admin approval)</div>{% endif %}
           </td>
           <td>
+            <a href="{% url 'repair_order_detail' order.pk %}#repair-timeline" class="btn btn-secondary btn-sm">Timeline</a>
             {% if order.pending_status %}
               <span class="text-muted">Awaiting admin approval</span>
             {% elif order.status == 'pending' %}
@@ -105,7 +115,9 @@
                 {% csrf_token %}<button type="submit" class="btn btn-primary btn-sm">Accept</button>
               </form>
               <form method="post" action="{% url 'repair_order_decision' order.pk 'decline' %}" style="display:inline;">
-                {% csrf_token %}<button type="submit" class="btn btn-danger btn-sm">Decline</button>
+                {% csrf_token %}
+                <label>Reason for declining<textarea name="reason" rows="2" required placeholder="Explain why you cannot take this repair."></textarea></label>
+                <button type="submit" class="btn btn-danger btn-sm">Decline</button>
               </form>
             {% else %}
               <a href="{% url 'repair_order_detail' order.pk %}" class="btn btn-secondary btn-sm">Review</a>

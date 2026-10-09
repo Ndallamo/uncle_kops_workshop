@@ -7,6 +7,32 @@
 {% url 'repair_order_list' as welcome_secondary_url %}
 {% include "workshop/includes/welcome_panel.html" with welcome_role="customer" heading="Start with a service request" description="Book a workshop visit, then use Track repair status to follow approved updates." primary_url=welcome_primary_url primary_label="Submit a service request" secondary_url=welcome_secondary_url secondary_label="Track repair status" %}
 
+<section aria-labelledby="my-vehicles-heading" style="margin-bottom:20px;">
+  <div class="flex items-center justify-between gap-2" style="flex-wrap:wrap; margin-bottom:12px;">
+    <h2 id="my-vehicles-heading" style="font-size:20px;">My Vehicles</h2>
+    {% if customer %}<a href="{% url 'vehicle_create' %}?customer={{ customer.pk }}" class="btn btn-secondary btn-sm">+ Register new vehicle</a>{% endif %}
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap:12px;">
+    {% for vehicle in vehicles %}
+    <article class="card" style="border-top:3px solid var(--orange);">
+      <div class="text-muted" style="font-size:12px;">{{ vehicle.license_plate|default:'Vehicle record' }}</div>
+      <h3 style="font-size:18px; margin-top:4px;">{{ vehicle.year }} {{ vehicle.make }} {{ vehicle.model }}</h3>
+      <div class="text-muted" style="font-size:13px; margin-top:6px;">Mileage: {% if vehicle.mileage %}{{ vehicle.mileage|floatformat:'0' }} km{% else %}Not recorded{% endif %}</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+        <a href="{% url 'appointment_create' %}?vehicle={{ vehicle.pk }}" class="btn btn-primary btn-sm">Book new service</a>
+        <a href="{% url 'vehicle_detail' vehicle.pk %}" class="btn btn-secondary btn-sm">Service history</a>
+      </div>
+    </article>
+    {% empty %}
+    <div class="empty-state">
+      <strong>No vehicles registered</strong>
+      <span>Register your vehicle once. Future services will stay linked to its history.</span>
+      {% if customer %}<a href="{% url 'vehicle_create' %}?customer={{ customer.pk }}" class="btn btn-primary btn-sm">Register a vehicle</a>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
 <div class="dashboard-grid" style="margin-bottom:20px;">
   <div class="card">
     <div class="card-title">Track repair status</div>

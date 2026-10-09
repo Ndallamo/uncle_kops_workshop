@@ -15,6 +15,9 @@
           <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
+            {% if field.html_name == 'service_amount' %}
+              <span id="invoice-zero-warning" class="alert alert-warning" role="alert" hidden>No customer-approved amount is available. A zero-value invoice cannot be created.</span>
+            {% endif %}
             {% if field.errors %}
               {% for error in field.errors %}
                 <span style="color:var(--red); font-size:12px;">{{ error }}</span>
@@ -30,4 +33,24 @@
     </form>
   </div>
 </div>
+{% if title == 'Create Invoice' %}
+{{ invoice_amounts|json_script:"invoice-amounts" }}
+<script>
+  (() => {
+    const amounts = JSON.parse(document.getElementById('invoice-amounts').textContent);
+    const repairOrder = document.getElementById('id_repair_order');
+    const serviceAmount = document.getElementById('id_service_amount');
+    const zeroWarning = document.getElementById('invoice-zero-warning');
+    if (!repairOrder || !serviceAmount) return;
+    const updateAmount = () => {
+      const amount = amounts[repairOrder.value];
+      const hasAmount = amount !== undefined && Number(amount) > 0;
+      serviceAmount.value = hasAmount ? Number(amount).toFixed(2) : '';
+      if (zeroWarning) zeroWarning.hidden = hasAmount || !repairOrder.value;
+    };
+    repairOrder.addEventListener('change', updateAmount);
+    updateAmount();
+  })();
+</script>
+{% endif %}
 {% endblock %}

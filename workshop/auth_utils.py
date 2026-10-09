@@ -9,7 +9,7 @@ from .models import PasswordResetToken
 from .currency import format_rand
 
 
-def send_verification_email(request, user, ttl_minutes=30):
+def send_verification_email(request, user, ttl_minutes=15):
     raw_token, token_obj = EmailVerificationToken.generate_for_user(user, ttl_minutes=ttl_minutes)
     verify_url = f"{_public_base_url(request)}/verify-email/?token={raw_token}"
     subject = 'Verify Your Uncle Kop\'s Workshop Account'
@@ -71,7 +71,7 @@ def can_request_password_reset(user, limit=3, period_seconds=3600):
     return recent_requests < limit
 
 
-def send_password_reset_email(request, user, ttl_minutes=30):
+def send_password_reset_email(request, user, ttl_minutes=15):
     raw_token, token_obj = PasswordResetToken.generate_for_user(user, ttl_minutes=ttl_minutes)
     reset_url = f"{_public_base_url(request)}/reset-password/?token={raw_token}"
     subject = 'Reset Your Password'

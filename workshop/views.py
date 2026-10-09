@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django import forms
 
 from django.contrib.auth import login, logout
 from django.contrib.auth.forms import AuthenticationForm
@@ -115,6 +116,15 @@ def record_repair_event(order, actor, event_type, *, note='', previous_status=''
                 message=note or event.get_event_type_display(),
                 link=f'/repairs/{order.pk}/',
             )
+    if event_type in {'assignment', 'status_rejected'} and order.assigned_tech_id:
+        mechanic = order.assigned_tech
+        if mechanic.pk != getattr(actor, 'pk', None):
+            Notification.objects.create(
+                recipient=mechanic,
+                repair_order=order,
+                message=note or event.get_event_type_display(),
+                link=f'/repairs/{order.pk}/',
+            )
     return event
 
 
@@ -158,6 +168,7 @@ from .models import (
     ServiceItem,
     UserProfile,
     EmailVerificationToken,
+    normalize_license_plate,
 )
 from .currency import format_rand
 
@@ -166,7 +177,9 @@ from .forms import (
     VehicleForm,
     RepairOrderForm,
     RepairDocumentForm,
-    RepairEstimateLineForm,
+    EstimateLaborForm,
+    EstimatePartForm,
+    EstimateNotesForm,
     LaborLineForm,
     PartsLineForm,
     InvoiceForm,
@@ -194,6 +207,12 @@ from .auth_utils import (
 #  AUTH
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+@require_POST
+def logout_view(request):
+    logout(request)
+    return redirect('login')
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
@@ -209,7 +228,7 @@ def login_view(request):
             messages.error(request, 'Too many verification emails requested. Please try again later.')
             return redirect('login')
         try:
-            send_verification_email(request, user, ttl_minutes=30)
+            send_verification_email(request, user, ttl_minutes=15)
         except Exception:
             logger.exception('Verification email delivery failed for user_id=%s.', user.pk)
             messages.error(request, 'We could not send the email right now. Please try again shortly.')
@@ -312,7 +331,7 @@ def register(request):
                 send_verification_email(
                     request,
                     user,
-                    ttl_minutes=30
+                    ttl_minutes=15
                 )
             except Exception:
                 logger.exception('Verification email delivery failed for user_id=%s.', user.pk)
@@ -361,7 +380,7 @@ def forgot_password(request):
                 send_password_reset_email(
                     request,
                     user,
-                    ttl_minutes=30
+                    ttl_minutes=15
                 )
             except Exception:
                 logger.exception('Password reset email delivery failed.')
@@ -540,7 +559,7 @@ def api_register(request):
         send_verification_email(
             request,
             user,
-            ttl_minutes=30
+            ttl_minutes=15
         )
 
     except Exception:
@@ -661,7 +680,7 @@ def resend_verification(request):
         send_verification_email(
             request,
             user,
-            ttl_minutes=30
+            ttl_minutes=15
         )
 
     except Exception:
@@ -1041,10 +1060,13 @@ def dashboard(request):
     if role == 'customer':
         customer = Customer.objects.filter(email=request.user.email).first()
         repair_orders = []
+        vehicles = Vehicle.objects.none()
+        approved_unassigned_orders = RepairOrder.objects.none()
         pending_approval = []
         notifications = []
         notification_items = Notification.objects.none()
         if customer:
+            vehicles = Vehicle.objects.filter(customer=customer).order_by('make', 'model', 'year', 'pk')
             notification_items = Notification.objects.filter(
                 recipient=request.user,
                 is_read=False,
@@ -1072,6 +1094,7 @@ def dashboard(request):
 
         return render(request, 'workshop/customer_dashboard.html', {
             'customer': customer,
+            'vehicles': vehicles,
             'repair_orders': repair_orders,
             'pending_approval': pending_approval,
             'notifications': notifications,
@@ -1079,11 +1102,17 @@ def dashboard(request):
         })
 
     if role == 'mechanic':
-        assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(assigned_tech=request.user).exclude(status='cancelled').order_by('-date_created')
+        assigned_orders = RepairOrder.objects.select_related('vehicle__customer').filter(
+            assigned_tech=request.user,
+            approved=True,
+        ).exclude(status='cancelled').order_by('-date_created')
         active_orders = assigned_orders.exclude(status__in=['completed', 'pending', 'waiting'])[:8]
         waiting_orders = assigned_orders.filter(status='waiting')
         pending_orders = assigned_orders.filter(status='pending')
-        my_assignments = Appointment.objects.select_related('customer', 'vehicle').filter(assigned_mechanic=request.user).order_by('date_time')
+        my_assignments = Appointment.objects.select_related('customer', 'vehicle', 'repair_order').filter(
+            assigned_mechanic=request.user,
+            repair_order__approved=True,
+        ).exclude(assignment_status='declined').order_by('date_time')
         return render(request, 'workshop/mechanic_dashboard.html', {
             'assigned_orders': assigned_orders,
             'active_orders': active_orders,
@@ -1107,6 +1136,10 @@ def dashboard(request):
             'paid_invoices':         Invoice.objects.filter(payment_status='paid').count(),
             'verification_invoices': Invoice.objects.filter(payment_status='unverified').count(),
             'status_proposals':      RepairOrder.objects.exclude(pending_status='').select_related('vehicle__customer', 'assigned_tech').order_by('date_updated'),
+            'approved_unassigned_orders': RepairOrder.objects.filter(
+                approved=True,
+                assigned_tech__isnull=True,
+            ).exclude(status__in=['cancelled', 'completed']).select_related('vehicle__customer').order_by('date_created'),
             'recent_orders':         RepairOrder.objects.select_related('vehicle__customer').order_by('-date_created')[:8],
             'upcoming_appointments': Appointment.objects.filter(date_time__gte=timezone.now()).select_related('customer', 'vehicle').order_by('date_time')[:5],
             'weekly_revenue':        InvoicePayment.objects.filter(received_at__date__gte=week_start, received_at__date__lte=today).aggregate(total=Sum('amount'))['total'] or 0,
@@ -1324,12 +1357,15 @@ def vehicle_detail(request, pk):
         if not customer or vehicle.customer_id != customer.pk:
             return _deny_access(request)
     elif role == 'mechanic':
-        if not vehicle.repair_orders.filter(assigned_tech=request.user).exists():
+        if not vehicle.repair_orders.filter(assigned_tech=request.user, approved=True).exists():
             return _deny_access(request)
     elif not _is_admin(request.user):
         return _deny_access(request)
 
-    repair_orders = vehicle.repair_orders.exclude(status='cancelled').order_by('-date_created')
+    repair_orders = vehicle.repair_orders.exclude(status='cancelled')
+    if role == 'mechanic':
+        repair_orders = repair_orders.filter(approved=True)
+    repair_orders = repair_orders.order_by('-date_created')
     return render(request, 'workshop/vehicle_detail.html', {'vehicle': vehicle, 'repair_orders': repair_orders})
 
 
@@ -1394,7 +1430,7 @@ def repair_order_list(request):
         else:
             orders = orders.none()
     elif profile and profile.role == 'mechanic':
-        orders = orders.filter(assigned_tech=request.user)
+        orders = orders.filter(assigned_tech=request.user, approved=True)
     elif not _is_admin(request.user):
         orders = orders.none()
 
@@ -1447,7 +1483,7 @@ def repair_order_detail(request, pk):
         customer = Customer.objects.filter(email=request.user.email).first()
         orders = orders.filter(vehicle__customer=customer) if customer else orders.none()
     elif profile and profile.role == 'mechanic':
-        orders = orders.filter(assigned_tech=request.user)
+        orders = orders.filter(assigned_tech=request.user, approved=True)
     order = get_object_or_404(orders, pk=pk)
     if is_customer:
         labor_lines = order.labor_lines.none()
@@ -1470,6 +1506,33 @@ def repair_order_detail(request, pk):
     # Mirrors the blocking rule in repair_order_customer_decision so the UI never
     # offers an approve/decline action the backend will silently refuse.
     has_estimate_lines = estimate_lines.exists()
+    estimate_labor_formset = forms.formset_factory(
+        EstimateLaborForm,
+        extra=0,
+        max_num=50,
+        validate_max=True,
+    )(prefix='labor')
+    estimate_part_formset = forms.formset_factory(
+        EstimatePartForm,
+        extra=0,
+        max_num=50,
+        validate_max=True,
+    )(prefix='parts')
+    estimate_catalog = {}
+    if is_admin or is_mechanic:
+        estimate_catalog = {
+            'labor': {
+                str(item.pk): str(item.labor_rate)
+                for item in ServiceItem.objects.only('pk', 'labor_rate')
+            },
+            'parts': {
+                str(part.pk): {
+                    'price': str(part.sell_price),
+                    'stock': part.stock_qty,
+                }
+                for part in Part.objects.only('pk', 'sell_price', 'stock_qty')
+            },
+        }
     customer_decision_locked = (
         order.status not in {'pending', 'in_progress', 'waiting'}
         or invoice is not None
@@ -1490,7 +1553,10 @@ def repair_order_detail(request, pk):
         'document_form': RepairDocumentForm() if not is_customer else None,
         'estimate': estimate,
         'estimate_lines': estimate_lines,
-        'estimate_line_form': RepairEstimateLineForm() if is_admin or is_mechanic else None,
+        'estimate_labor_formset': estimate_labor_formset if is_admin or is_mechanic else None,
+        'estimate_part_formset': estimate_part_formset if is_admin or is_mechanic else None,
+        'estimate_notes_form': EstimateNotesForm() if is_admin or is_mechanic else None,
+        'estimate_catalog': estimate_catalog,
         'customer_decision_locked': customer_decision_locked,
         'has_estimate_lines': has_estimate_lines,
     })
@@ -1501,18 +1567,79 @@ def repair_estimate_line_add(request, pk):
     order = get_object_or_404(RepairOrder, pk=pk)
     profile = getattr(request.user, 'userprofile', None)
     is_admin = (profile and profile.role == 'admin') or request.user.is_staff
-    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.assigned_tech_id == request.user.pk
-    if not (is_admin or is_assigned_mechanic) or order.approved:
+    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.approved and order.assigned_tech_id == request.user.pk
+    if not is_admin or order.approved:
         return _deny_access(request)
-    form = RepairEstimateLineForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        line = form.save(commit=False)
-        line.repair_order = order
-        line.created_by = request.user
-        line.save()
-        refresh_pending_estimate(order)
-        record_repair_event(order, request.user, 'work_logged', note=f'Estimate line added: {line.line_type}.')
-        messages.success(request, 'Estimate line added.')
+    labor_formset = forms.formset_factory(
+        EstimateLaborForm,
+        extra=0,
+        max_num=50,
+        validate_max=True,
+    )(request.POST if request.method == 'POST' else None, prefix='labor')
+    part_formset = forms.formset_factory(
+        EstimatePartForm,
+        extra=0,
+        max_num=50,
+        validate_max=True,
+    )(request.POST if request.method == 'POST' else None, prefix='parts')
+    notes_form = EstimateNotesForm(request.POST if request.method == 'POST' else None)
+    if request.method == 'POST':
+        labor_valid = labor_formset.is_valid()
+        parts_valid = part_formset.is_valid()
+        notes_valid = notes_form.is_valid()
+        valid = labor_valid and parts_valid and notes_valid
+        labor_lines = [form.cleaned_data for form in labor_formset.forms if form.cleaned_data]
+        part_lines = [form.cleaned_data for form in part_formset.forms if form.cleaned_data]
+        if not labor_lines and not part_lines:
+            messages.error(request, 'Add at least one labor service or part to the estimate.')
+        elif valid:
+            notes = notes_form.cleaned_data.get('notes', '')
+            line_count = 0
+            with transaction.atomic():
+                for line_data in labor_lines:
+                    service_item = line_data['service_item']
+                    RepairEstimateLine.objects.create(
+                        repair_order=order,
+                        line_type='labor',
+                        service_item=service_item,
+                        quantity=line_data['hours'],
+                        unit_price=service_item.labor_rate,
+                        notes=notes,
+                        created_by=request.user,
+                    )
+                    line_count += 1
+                for line_data in part_lines:
+                    part = line_data['part']
+                    RepairEstimateLine.objects.create(
+                        repair_order=order,
+                        line_type='part',
+                        part=part,
+                        quantity=line_data['quantity'],
+                        unit_price=part.sell_price,
+                        notes=notes,
+                        created_by=request.user,
+                    )
+                    line_count += 1
+                refresh_pending_estimate(order)
+                record_repair_event(
+                    order,
+                    request.user,
+                    'work_logged',
+                    note=f'Estimate updated with {len(labor_lines)} service item(s) and {len(part_lines)} part(s).',
+                    metadata={'service_items': len(labor_lines), 'parts': len(part_lines)},
+                )
+            messages.success(request, f'Added {line_count} line(s) to the estimate.')
+        else:
+            for formset in (labor_formset, part_formset):
+                for error in formset.non_form_errors():
+                    messages.error(request, error)
+                for line_form in formset.forms:
+                    for field_errors in line_form.errors.values():
+                        for error in field_errors:
+                            messages.error(request, error)
+            for field_errors in notes_form.errors.values():
+                for error in field_errors:
+                    messages.error(request, error)
     return redirect('repair_order_detail', pk=pk)
 
 
@@ -1521,7 +1648,7 @@ def repair_document_upload(request, pk):
     order = get_object_or_404(RepairOrder, pk=pk)
     profile = getattr(request.user, 'userprofile', None)
     is_admin = (profile and profile.role == 'admin') or request.user.is_staff
-    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.assigned_tech_id == request.user.pk
+    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.approved and order.assigned_tech_id == request.user.pk
     if not (is_admin or is_assigned_mechanic):
         return _deny_access(request)
     if request.method != 'POST':
@@ -1551,7 +1678,7 @@ def repair_document_download(request, pk):
     profile = getattr(request.user, 'userprofile', None)
     is_admin = (profile and profile.role == 'admin') or request.user.is_staff
     is_customer = profile and profile.role == 'customer'
-    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.assigned_tech_id == request.user.pk
+    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.approved and order.assigned_tech_id == request.user.pk
     if is_customer:
         customer = Customer.objects.filter(email=request.user.email).first()
         allowed = customer and order.vehicle.customer_id == customer.pk and document.customer_visible
@@ -1578,6 +1705,8 @@ def repair_order_create(request):
     form = RepairOrderForm(request.POST or None)
     form.fields.pop('status')
     form.fields.pop('approved')
+    form.fields.pop('assignment_reason')
+    form.fields.pop('assigned_tech')
     if form.is_valid():
         order = form.save()
         record_repair_event(order, request.user, 'created', current_status=order.status, customer_visible=True)
@@ -1600,10 +1729,27 @@ def repair_order_edit(request, pk):
     form.fields.pop('status')
     form.fields.pop('approved')
     form.fields['vehicle'].disabled = True
+    assignment_locked = role == 'admin' and not order.approved
+    if assignment_locked:
+        form.fields.pop('assigned_tech')
+    if role == 'admin' and not order.approved and request.method == 'POST':
+        posted_mechanic_id = request.POST.get('assigned_tech')
+        if posted_mechanic_id is not None and posted_mechanic_id != str(previous_assigned_tech_id or ''):
+            form.add_error(None, 'The customer must approve this repair before a mechanic can be assigned.')
+            return render(request, 'workshop/repair_order_form.html', {'form': form, 'title': 'Edit Repair Order', 'order': order})
     if role == 'mechanic':
+        if not order.approved:
+            return _deny_access(request)
         for field_name in ['assigned_tech', 'description', 'mileage_in']:
             form.fields[field_name].disabled = True
+        form.fields['assignment_reason'].widget = forms.HiddenInput()
     if form.is_valid():
+        assignment_reason = (form.cleaned_data.get('assignment_reason') or '').strip()
+        assigned_tech_id = getattr(form.cleaned_data.get('assigned_tech'), 'pk', None)
+        assignment_changed = 'assigned_tech' in form.cleaned_data and previous_assigned_tech_id != assigned_tech_id
+        if role == 'admin' and assignment_changed and not assignment_reason:
+            form.add_error('assignment_reason', 'Please explain why the mechanic is being changed.')
+            return render(request, 'workshop/repair_order_form.html', {'form': form, 'title': 'Edit Repair Order', 'order': order})
         changed_fields = form.changed_data
         with transaction.atomic():
             order = form.save()
@@ -1621,9 +1767,34 @@ def repair_order_edit(request, pk):
                     repair_order=order,
                     details=details,
                 )
+                if previous_assigned_tech_id != order.assigned_tech_id:
+                    previous_mechanic = User.objects.filter(pk=previous_assigned_tech_id).first()
+                    current_mechanic = order.assigned_tech
+                    assignment_note = (
+                        f"Mechanic assignment changed from "
+                        f"{previous_mechanic.get_full_name() or previous_mechanic.username if previous_mechanic else 'Unassigned'} "
+                        f"to {current_mechanic.get_full_name() or current_mechanic.username if current_mechanic else 'Unassigned'}. "
+                        f"Reason: {assignment_reason}"
+                    )
+                    record_repair_event(
+                        order,
+                        request.user,
+                        'assignment',
+                        note=assignment_note,
+                        customer_visible=True,
+                        metadata={
+                            'from_user_id': previous_assigned_tech_id,
+                            'to_user_id': order.assigned_tech_id,
+                        },
+                    )
         messages.success(request, "Repair Order updated.")
         return redirect('repair_order_detail', pk=pk)
-    return render(request, 'workshop/repair_order_form.html', {'form': form, 'title': 'Edit Repair Order', 'order': order})
+    return render(request, 'workshop/repair_order_form.html', {
+        'form': form,
+        'title': 'Edit Repair Order',
+        'order': order,
+        'assignment_locked': assignment_locked,
+    })
 
 
 @login_required
@@ -1642,6 +1813,7 @@ def repair_order_decision(request, pk, action):
         RepairOrder,
         pk=pk,
         assigned_tech=request.user,
+        approved=True,
         status='pending',
     )
     if action == 'accept':
@@ -1657,9 +1829,19 @@ def repair_order_decision(request, pk, action):
         )
         messages.success(request, f'You accepted repair order #{order.pk}. The status update is awaiting admin approval.')
     else:
+        reason = (request.POST.get('reason') or '').strip()
+        if not reason:
+            messages.error(request, 'Please provide a reason for declining this repair.')
+            return redirect('dashboard')
         order.assigned_tech = None
         order.save(update_fields=['assigned_tech', 'date_updated'])
-        record_repair_event(order, request.user, 'assignment', note='Mechanic declined the assigned repair.')
+        record_repair_event(
+            order,
+            request.user,
+            'assignment',
+            note=f'Mechanic declined the assigned repair. Reason: {reason}',
+            customer_visible=True,
+        )
         messages.info(request, f'You declined repair order #{order.pk}. It is available for admin reassignment.')
 
     return redirect('dashboard')
@@ -1768,7 +1950,7 @@ def repair_order_status_proposal(request, pk):
         messages.error(request, 'Only mechanics can propose repair status changes.')
         return redirect('dashboard')
 
-    order = get_object_or_404(RepairOrder, pk=pk, assigned_tech=request.user)
+    order = get_object_or_404(RepairOrder, pk=pk, assigned_tech=request.user, approved=True)
     if order.status in {'completed', 'cancelled'}:
         messages.error(request, 'Closed repair orders cannot receive status proposals.')
         return redirect('repair_order_detail', pk=order.pk)
@@ -1924,16 +2106,22 @@ def repair_order_status_review(request, pk, action):
         record_repair_event(order, request.user, 'status_changed', previous_status=previous_status, current_status=order.status, customer_visible=True)
         messages.success(request, f'Status for repair order #{order.pk} approved and published to the customer.')
     else:
+        reason = (request.POST.get('reason') or '').strip()
+        if not reason:
+            messages.error(request, 'Please provide a reason for rejecting this status update.')
+            return redirect('dashboard')
         proposed_status = order.pending_status
         with transaction.atomic():
             order.pending_status = ''
             order.save(update_fields=['pending_status', 'date_updated'])
-            record_audit_entry(
-                request.user,
-                'repair_status_proposal_rejected',
+            record_repair_event(
                 order,
-                repair_order=order,
-                details={'proposed_status': proposed_status},
+                request.user,
+                'status_rejected',
+                current_status=proposed_status,
+                note=f'The proposed status "{dict(RepairOrder.STATUS_CHOICES).get(proposed_status, proposed_status)}" was rejected. Reason: {reason}',
+                customer_visible=True,
+                metadata={'proposed_status': proposed_status, 'reason': reason},
             )
         messages.info(request, f'Status update for repair order #{order.pk} rejected.')
     return redirect('dashboard')
@@ -1944,7 +2132,7 @@ def add_labor_line(request, ro_pk):
     order = get_object_or_404(RepairOrder, pk=ro_pk)
     profile = getattr(request.user, 'userprofile', None)
     is_admin = (profile and profile.role == 'admin') or request.user.is_staff
-    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.assigned_tech_id == request.user.pk
+    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.approved and order.assigned_tech_id == request.user.pk
     if not (is_admin or is_assigned_mechanic):
         messages.error(request, 'Only an admin or the assigned mechanic may add labor to this repair order.')
         return redirect('dashboard')
@@ -1982,7 +2170,7 @@ def add_parts_line(request, ro_pk):
     order = get_object_or_404(RepairOrder, pk=ro_pk)
     profile = getattr(request.user, 'userprofile', None)
     is_admin = (profile and profile.role == 'admin') or request.user.is_staff
-    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.assigned_tech_id == request.user.pk
+    is_assigned_mechanic = profile and profile.role == 'mechanic' and order.approved and order.assigned_tech_id == request.user.pk
     if not (is_admin or is_assigned_mechanic):
         messages.error(request, 'Only an admin or the assigned mechanic may add parts to this repair order.')
         return redirect('dashboard')
@@ -2176,12 +2364,16 @@ def invoice_create(request):
 
     if repair_order:
         initial['repair_order'] = repair_order.pk
-        initial['service_amount'] = repair_order.grand_total
+        initial['service_amount'] = repair_order.invoice_amount
 
     form = InvoiceForm(
         request.POST or None,
         initial=initial
     )
+    invoice_amounts = {
+        str(order.pk): str(order.invoice_amount)
+        for order in form.fields['repair_order'].queryset.select_related('vehicle')
+    }
 
     if form.is_valid():
         with transaction.atomic():
@@ -2225,7 +2417,8 @@ def invoice_create(request):
         'workshop/invoice_form.html',
         {
             'form': form,
-            'title': 'Create Invoice'
+            'title': 'Create Invoice',
+            'invoice_amounts': invoice_amounts,
         }
     )
 
@@ -2490,7 +2683,10 @@ def appointment_list(request):
         else:
             appointments = appointments.none()
     elif profile and profile.role == 'mechanic':
-        appointments = appointments.filter(assigned_mechanic=request.user)
+        appointments = appointments.filter(
+            assigned_mechanic=request.user,
+            repair_order__approved=True,
+        ).exclude(assignment_status='declined')
     elif not _is_admin(request.user):
         return _deny_access(request)
     query = request.GET.get('q', '').strip()
@@ -2531,12 +2727,15 @@ DUPLICATE_REQUEST_WINDOW = timedelta(hours=24)
 
 def _find_matching_vehicle(customer, data):
     vehicles = Vehicle.objects.filter(customer=customer)
-    plate = (data.get('license_plate') or '').strip()
+    plate = normalize_license_plate(data.get('license_plate'))
     vin = (data.get('vin') or '').strip()
     if plate:
-        match = vehicles.filter(license_plate__iexact=plate).first()
-        if match:
-            return match
+        plate_matches = [
+            vehicle for vehicle in vehicles.exclude(license_plate='').order_by('pk')
+            if normalize_license_plate(vehicle.license_plate) == plate
+        ]
+        if len(plate_matches) == 1:
+            return plate_matches[0]
     if vin:
         match = vehicles.filter(vin__iexact=vin).first()
         if match:
@@ -2547,6 +2746,41 @@ def _find_matching_vehicle(customer, data):
     if make and model and year:
         return vehicles.filter(make__iexact=make, model__iexact=model, year=year).first()
     return None
+
+
+@login_required
+@require_GET
+def vehicle_lookup(request):
+    if _role(request.user) != 'customer':
+        return JsonResponse({'found': False}, status=403)
+    plate = normalize_license_plate(request.GET.get('plate'))
+    if not plate:
+        return JsonResponse({'found': False})
+    customer = Customer.objects.filter(email=request.user.email).first()
+    if not customer:
+        return JsonResponse({'found': False})
+    matches = [
+        vehicle for vehicle in Vehicle.objects.filter(customer=customer).exclude(license_plate='').order_by('pk')
+        if normalize_license_plate(vehicle.license_plate) == plate
+    ]
+    if len(matches) != 1:
+        return JsonResponse({'found': False, 'ambiguous': len(matches) > 1})
+    vehicle = matches[0]
+    return JsonResponse({
+        'found': True,
+        'vehicle': {
+            'id': vehicle.pk,
+            'license_plate': vehicle.license_plate,
+            'make': vehicle.make,
+            'model': vehicle.model,
+            'year': vehicle.year,
+            'vin': vehicle.vin,
+            'color': vehicle.color,
+            'mileage': vehicle.mileage,
+            'service_plan': vehicle.service_plan,
+            'recent_service_history': vehicle.recent_service_history,
+        },
+    })
 
 
 def _recent_open_request_exists(vehicle, description=''):
@@ -2563,12 +2797,51 @@ def _recent_open_request_exists(vehicle, description=''):
 def appointment_create(request):
     if not (_is_admin(request.user) or _role(request.user) == 'customer'):
         return _deny_access(request)
-    form = AppointmentForm(request.POST or None, user=request.user)
+    profile = getattr(request.user, 'userprofile', None)
+    initial = {}
+    selected_vehicle = None
+    if profile and profile.role == 'customer':
+        customer = Customer.objects.filter(email=request.user.email).first()
+        selected_vehicle_id = request.POST.get('vehicle') or request.GET.get('vehicle')
+        selected_vehicle = Vehicle.objects.filter(
+            pk=selected_vehicle_id,
+            customer=customer,
+        ).first() if customer and selected_vehicle_id else None
+        if selected_vehicle and request.method == 'GET':
+            initial = {
+                'vehicle': selected_vehicle.pk,
+                'vehicle_make': selected_vehicle.make,
+                'vehicle_model': selected_vehicle.model,
+                'vehicle_year': selected_vehicle.year,
+                'vehicle_vin': selected_vehicle.vin,
+                'vehicle_license_plate': selected_vehicle.license_plate,
+                'vehicle_color': selected_vehicle.color,
+                'vehicle_mileage': selected_vehicle.mileage or None,
+                'vehicle_service_plan': selected_vehicle.service_plan,
+                'vehicle_recent_service_history': selected_vehicle.recent_service_history,
+                'vehicle_notes': selected_vehicle.notes,
+            }
+        elif selected_vehicle:
+            initial = {
+                'vehicle': selected_vehicle.pk,
+                'vehicle_make': selected_vehicle.make,
+                'vehicle_model': selected_vehicle.model,
+                'vehicle_year': selected_vehicle.year,
+                'vehicle_vin': selected_vehicle.vin,
+                'vehicle_license_plate': selected_vehicle.license_plate,
+                'vehicle_color': selected_vehicle.color,
+                'vehicle_mileage': selected_vehicle.mileage or None,
+                'vehicle_service_plan': selected_vehicle.service_plan,
+                'vehicle_recent_service_history': selected_vehicle.recent_service_history,
+                'vehicle_notes': selected_vehicle.notes,
+            }
+    form = AppointmentForm(request.POST or None, user=request.user, initial=initial)
 
     if form.is_valid():
         appt = form.save(commit=False)
-
-        profile = getattr(request.user, 'userprofile', None)
+        current_mileage = None
+        vehicle_mileage_changed = False
+        vehicle_service_plan_changed = False
 
         if profile and profile.role == 'customer':
             customer = Customer.objects.filter(
@@ -2587,14 +2860,44 @@ def appointment_create(request):
 
             appt.customer = customer
 
-            vehicle_id = request.POST.get('vehicle')
+            vehicle_id = form.cleaned_data.get('vehicle')
 
-            if not vehicle_id:
+            if vehicle_id:
+                appt.vehicle = vehicle_id
+                service_plan = (form.cleaned_data.get('vehicle_service_plan') or '').strip()
+                if service_plan != vehicle_id.service_plan:
+                    vehicle_id.service_plan = service_plan
+                    vehicle_service_plan_changed = True
+                service_plan = (form.cleaned_data.get('vehicle_service_plan') or '').strip()
+                if service_plan != vehicle_id.service_plan:
+                    vehicle_id.service_plan = service_plan
+                    vehicle_service_plan_changed = True
+            else:
                 manual_vehicle = form.manual_vehicle_data()
 
                 if any(value not in (None, '', 0) for value in manual_vehicle.values()):
                     vehicle = _find_matching_vehicle(customer, manual_vehicle)
                     if vehicle is None:
+                        if not manual_vehicle['make'] or not manual_vehicle['model'] or not manual_vehicle['year']:
+                            form.add_error(
+                                'vehicle_license_plate',
+                                'No vehicle was found for this plate. Enter the make, model, and year to register a new vehicle.',
+                            )
+                            return render(request, 'workshop/appointment_form.html', {
+                                'form': form,
+                                'title': f'Book Service for: {selected_vehicle.year} {selected_vehicle.make} {selected_vehicle.model}' if selected_vehicle else 'Book Appointment',
+                                'selected_vehicle': selected_vehicle,
+                            })
+                        other_owner_vehicle = next((
+                            candidate for candidate in Vehicle.objects.exclude(customer=customer).exclude(license_plate='')
+                            if normalize_license_plate(candidate.license_plate) == normalize_license_plate(manual_vehicle['license_plate'])
+                        ), None) if manual_vehicle['license_plate'] else None
+                        if other_owner_vehicle:
+                            form.add_error(
+                                'vehicle_license_plate',
+                                'This plate is already registered to another customer. Contact the workshop to resolve ownership.',
+                            )
+                            return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
                         vehicle = Vehicle.objects.create(
                             customer=customer,
                             make=manual_vehicle['make'] or 'Unknown',
@@ -2610,6 +2913,39 @@ def appointment_create(request):
                         )
                     appt.vehicle = vehicle
 
+            if appt.vehicle_id:
+                service_plan = (form.cleaned_data.get('vehicle_service_plan') or '').strip()
+                if service_plan != appt.vehicle.service_plan:
+                    appt.vehicle.service_plan = service_plan
+                    vehicle_service_plan_changed = True
+
+            current_mileage = form.cleaned_data.get('vehicle_mileage')
+            if appt.vehicle_id and current_mileage:
+                if current_mileage < appt.vehicle.mileage:
+                    form.add_error('vehicle_mileage', 'Current mileage cannot be less than the mileage already recorded for this vehicle.')
+                    return render(request, 'workshop/appointment_form.html', {
+                        'form': form,
+                        'title': f'Book Service for: {selected_vehicle.year} {selected_vehicle.make} {selected_vehicle.model}' if selected_vehicle else 'Book Appointment',
+                        'selected_vehicle': selected_vehicle,
+                    })
+                if current_mileage != appt.vehicle.mileage:
+                    appt.vehicle.mileage = current_mileage
+                    vehicle_mileage_changed = True
+
+            requested_services = (
+                [] if profile and profile.role == 'customer'
+                else list(form.cleaned_data.get('requested_services') or [])
+            )
+            other_service_details = (form.cleaned_data.get('service_desc') or '').strip()
+            service_descriptions = []
+            if requested_services:
+                service_descriptions.append(
+                    'Requested services: ' + ', '.join(service.name for service in requested_services)
+                )
+            if other_service_details:
+                service_descriptions.append(other_service_details)
+            appt.service_desc = '\n'.join(service_descriptions)
+
             if appt.vehicle_id and _recent_open_request_exists(appt.vehicle, appt.service_desc):
                 form.add_error(
                     None,
@@ -2619,6 +2955,9 @@ def appointment_create(request):
                 return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
         assigned_mechanic = form.cleaned_data.get('assigned_mechanic')
         assignment_status = form.cleaned_data.get('assignment_status') or 'pending'
+        if _is_admin(request.user) and assigned_mechanic:
+            form.add_error('assigned_mechanic', 'Create the service request first. A mechanic can be assigned after the customer approves its repair estimate.')
+            return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
         if assigned_mechanic and assignment_status == 'accepted':
             with transaction.atomic():
                 User.objects.select_for_update().get(pk=assigned_mechanic.pk)
@@ -2628,9 +2967,31 @@ def appointment_create(request):
                     duration=appt.duration,
                 ):
                     form.add_error('assigned_mechanic', 'This mechanic already has an accepted appointment during that time.')
-                    return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Book Appointment'})
+                    return render(request, 'workshop/appointment_form.html', {
+                        'form': form,
+                        'title': f'Book Service for: {selected_vehicle.year} {selected_vehicle.make} {selected_vehicle.model}' if selected_vehicle else 'Book Appointment',
+                        'selected_vehicle': selected_vehicle,
+                    })
+                vehicle_updates = []
+                if vehicle_mileage_changed:
+                    vehicle_updates.append('mileage')
+                if vehicle_service_plan_changed:
+                    vehicle_updates.append('service_plan')
+                if vehicle_service_plan_changed:
+                    vehicle_updates.append('service_plan')
+                if vehicle_updates:
+                    appt.vehicle.save(update_fields=vehicle_updates)
                 appt.save()
         else:
+            vehicle_updates = []
+            if vehicle_mileage_changed:
+                vehicle_updates.append('mileage')
+            if vehicle_service_plan_changed:
+                vehicle_updates.append('service_plan')
+            if vehicle_service_plan_changed:
+                vehicle_updates.append('service_plan')
+            if vehicle_updates:
+                appt.vehicle.save(update_fields=vehicle_updates)
             appt.save()
 
         if appt.vehicle_id:
@@ -2641,6 +3002,7 @@ def appointment_create(request):
                 internal_notes=(
                     f"Service request booked for appointment "
                     f"{appt.date_time:%Y-%m-%d %H:%M}"
+                    + (f"\nCustomer notes: {appt.notes.strip()}" if appt.notes.strip() else '')
                 ),
                 mileage_in=appt.vehicle.mileage or 0,
                 approved=False,
@@ -2699,7 +3061,8 @@ def appointment_create(request):
         'workshop/appointment_form.html',
         {
             'form': form,
-            'title': 'Book Appointment'
+            'title': f'Book Service for: {selected_vehicle.year} {selected_vehicle.make} {selected_vehicle.model}' if selected_vehicle else 'Book Appointment',
+            'selected_vehicle': selected_vehicle,
         }
     )
 
@@ -2708,7 +3071,10 @@ def appointment_edit(request, pk):
     appt = get_object_or_404(Appointment, pk=pk)
     profile = getattr(request.user, 'userprofile', None)
     role = profile.role if profile else ('admin' if request.user.is_staff else '')
-    if role != 'admin' and request.user != appt.assigned_mechanic:
+    if role != 'admin' and (
+        request.user != appt.assigned_mechanic
+        or (role == 'mechanic' and appt.assignment_status == 'declined')
+    ):
         messages.error(request, 'Only the admin or the assigned mechanic can edit this appointment.')
         return redirect('appointment_list')
 
@@ -2720,9 +3086,26 @@ def appointment_edit(request, pk):
     }
     form = AppointmentForm(request.POST or None, instance=appt, user=request.user)
     if form.is_valid():
+        assigned_mechanic = form.cleaned_data.get('assigned_mechanic')
+        assignment_changed = previous_values['assigned_mechanic_id'] != getattr(assigned_mechanic, 'pk', None)
+        assignment_status = form.cleaned_data.get('assignment_status') or 'pending'
+        assignment_state_changed = previous_values['assignment_status'] != assignment_status
+        if assigned_mechanic and assignment_status == 'accepted':
+            repair_order = appt.repair_order
+            if not repair_order or not repair_order.approved:
+                form.add_error('assignment_status', 'The customer must approve the repair estimate before a mechanic can accept this appointment.')
+                return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
+        if role == 'admin' and (assignment_changed or assignment_state_changed) and assigned_mechanic:
+            if not appt.repair_order_id or not appt.repair_order.approved:
+                form.add_error('assigned_mechanic', 'The customer must approve the repair estimate before a mechanic can be assigned.')
+                return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
+        assignment_reason = (form.cleaned_data.get('assignment_reason') or '').strip()
+        if role == 'admin' and assignment_changed and not assignment_reason:
+            form.add_error('assignment_reason', 'Please explain why the mechanic is being changed.')
+            return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
         with transaction.atomic():
-            assigned_mechanic = form.cleaned_data.get('assigned_mechanic')
-            assignment_status = form.cleaned_data.get('assignment_status') or 'pending'
+            if role == 'admin' and assignment_changed and assigned_mechanic:
+                assignment_status = 'pending'
             if assigned_mechanic and assignment_status == 'accepted':
                 User.objects.select_for_update().get(pk=assigned_mechanic.pk)
                 if Appointment.has_schedule_conflict(
@@ -2736,6 +3119,10 @@ def appointment_edit(request, pk):
             updated_appt = form.save(commit=False)
             updated_appt.assigned_mechanic = assigned_mechanic
             updated_appt.assignment_status = assignment_status
+            if assignment_changed:
+                updated_appt.assignment_reason = assignment_reason
+            else:
+                updated_appt.assignment_reason = appt.assignment_reason
             updated_appt.save()
             current_values = {
                 'date_time': updated_appt.date_time.isoformat(),
@@ -2773,6 +3160,29 @@ def appointment_edit(request, pk):
                 status='pending' if role == 'admin' else None,
                 internal_notes=f"Mechanic assignment declined for appointment {updated_appt.date_time:%Y-%m-%d %H:%M}",
                 approved=False,
+            )
+
+        if assignment_changed and updated_appt.repair_order_id:
+            repair_order = updated_appt.repair_order
+            previous_mechanic = User.objects.filter(pk=previous_values['assigned_mechanic_id']).first()
+            current_mechanic = updated_appt.assigned_mechanic
+            repair_order.assigned_tech = current_mechanic
+            repair_order.save(update_fields=['assigned_tech', 'date_updated'])
+            record_repair_event(
+                repair_order,
+                request.user,
+                'assignment',
+                note=(
+                    f"Mechanic assignment changed from "
+                    f"{previous_mechanic.get_full_name() or previous_mechanic.username if previous_mechanic else 'Unassigned'} "
+                    f"to {current_mechanic.get_full_name() or current_mechanic.username if current_mechanic else 'Unassigned'}. "
+                    f"Reason: {assignment_reason}"
+                ),
+                customer_visible=True,
+                metadata={
+                    'from_user_id': previous_values['assigned_mechanic_id'],
+                    'to_user_id': updated_appt.assigned_mechanic_id,
+                },
             )
 
         messages.success(request, "Appointment updated.")
@@ -2872,6 +3282,12 @@ def appointment_decision(request, pk, action):
         pk=pk,
         assigned_mechanic=request.user,
     )
+    if appt.assignment_status != 'pending':
+        messages.error(request, 'This appointment is no longer awaiting your decision.')
+        return redirect('appointment_list')
+    if not appt.repair_order_id or not appt.repair_order.approved:
+        messages.error(request, 'The customer must approve the repair estimate before a mechanic can accept this appointment.')
+        return redirect('appointment_list')
     if action == 'accept' and Appointment.has_schedule_conflict(
             mechanic=request.user,
             date_time=appt.date_time,
@@ -2882,17 +3298,23 @@ def appointment_decision(request, pk, action):
             return redirect('appointment_list')
 
     appt.assignment_status = 'accepted' if action == 'accept' else 'declined'
-    appt.save(update_fields=['assignment_status'])
+    reason = (request.POST.get('reason') or '').strip()
+    if action == 'decline' and not reason:
+        messages.error(request, 'Please provide a reason for declining this appointment.')
+        return redirect('appointment_list')
+    if action == 'decline':
+        appt.assignment_reason = reason
+    appt.save(update_fields=['assignment_status', 'assignment_reason'])
     record_audit_entry(
         request.user,
         f'appointment_{action}',
         appt,
-        details={'assignment_status': appt.assignment_status},
+        details={'assignment_status': appt.assignment_status, 'reason': reason},
         repair_order=getattr(appt, 'repair_order', None),
     )
 
     if action == 'accept':
-        get_or_update_appointment_repair_order(
+        repair_order = get_or_update_appointment_repair_order(
             appt,
             assigned_tech=request.user,
             status='in_progress',
@@ -2903,11 +3325,21 @@ def appointment_decision(request, pk, action):
         )
         messages.success(request, 'You accepted the service assignment. The status update is awaiting admin approval.')
     else:
-        get_or_update_appointment_repair_order(
+        repair_order = get_or_update_appointment_repair_order(
             appt,
             assigned_tech=None,
             internal_notes=f"Mechanic {request.user.get_full_name() or request.user.username} declined the assignment.",
             approved=False,
+        )
+        if repair_order.assigned_tech_id:
+            repair_order.assigned_tech = None
+            repair_order.save(update_fields=['assigned_tech', 'date_updated'])
+        record_repair_event(
+            repair_order,
+            request.user,
+            'assignment',
+            note=f'Mechanic declined the appointment. Reason: {reason}',
+            customer_visible=True,
         )
         messages.warning(request, 'You declined the service assignment.')
 

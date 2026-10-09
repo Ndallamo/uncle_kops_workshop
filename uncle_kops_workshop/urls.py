@@ -16,7 +16,7 @@ urlpatterns = [
 
     # Auth
     path('login/',  workshop_views.login_view, name='login'),
-    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('logout/', workshop_views.logout_view, name='logout'),
     path('register/', workshop_views.register, name='register'),
     path('forgot-password/', workshop_views.forgot_password, name='forgot_password'),
     path('reset-password/', workshop_views.reset_password, name='reset_password'),

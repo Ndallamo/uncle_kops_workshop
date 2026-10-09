@@ -10,6 +10,12 @@
   <div class="card">
     <form method="post">
       {% csrf_token %}
+      {% if assignment_locked %}
+      <div class="alert alert-info" role="status" style="margin-bottom:16px;">Mechanic assignment is available after the customer approves this repair estimate. Customer and vehicle details cannot be changed here.</div>
+      {% elif order and request.user.userprofile.role == 'admin' %}
+      <div class="alert alert-info" role="status" style="margin-bottom:16px;">Customer and vehicle details are fixed. Use this page only to change the assigned mechanic and its reason.</div>
+      {% endif %}
+      {% if form.non_field_errors %}<div class="alert alert-error" role="alert">{{ form.non_field_errors }}</div>{% endif %}
       <div class="form-grid">
         {% for field in form %}
           <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">

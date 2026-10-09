@@ -10,8 +10,7 @@ from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from workshop.forms import CustomerForm, InvoiceForm, InvoicePaymentForm, LaborLineForm, PartsLineForm, RepairOrderForm
-from workshop.forms import CustomerForm, InvoiceForm, InvoicePaymentForm, LaborLineForm, PartsLineForm, RepairEstimateLineForm, RepairOrderForm
+from workshop.forms import CustomerForm, EstimateLaborForm, EstimatePartForm, InvoiceForm, InvoicePaymentForm, LaborLineForm, PartsLineForm, RepairOrderForm, VehicleForm
 from workshop.models import AuditLog, Appointment, CollectionRecord, Customer, EmailVerificationToken, Invoice, InvoicePayment, LaborLine, Notification, Part, PartsLine, PasswordResetToken, RepairDocument, RepairEstimate, RepairEstimateLine, RepairOrder, RepairOrderEvent, ServiceItem, UserProfile, Vehicle
 from workshop.auth_utils import send_invoice_ready_email, send_password_reset_email, send_verification_email
 from workshop.currency import format_rand
@@ -41,6 +40,23 @@ class InvoiceFormTests(TestCase):
         self.assertEqual(form.fields['repair_order'].empty_label, 'Choose repair/vehicle')
         self.assertNotIn('payment_status', form.fields)
         self.assertNotIn('payment_method', form.fields)
+        self.assertTrue(form.fields['tax_rate'].disabled)
+        self.assertEqual(form.fields['tax_rate'].initial, Decimal('15.00'))
+
+    def test_invoice_vat_is_fixed_at_15_even_when_a_different_rate_is_supplied(self):
+        customer = Customer.objects.create(first_name='VAT', last_name='Test', email='vat@example.com')
+        vehicle = Vehicle.objects.create(customer=customer, make='Toyota', model='Yaris', year=2020)
+        order = RepairOrder.objects.create(vehicle=vehicle, description='VAT test')
+
+        invoice = Invoice.objects.create(
+            repair_order=order,
+            due_date=timezone.localdate() + timedelta(days=1),
+            service_amount=Decimal('100.00'),
+            tax_rate=Decimal('2.00'),
+        )
+
+        self.assertEqual(invoice.tax_rate, Decimal('15.00'))
+        self.assertEqual(invoice.tax_amount, Decimal('15.00'))
 
     def test_line_item_forms_use_descriptive_empty_labels(self):
         labor_form = LaborLineForm()
@@ -136,6 +152,14 @@ class RepairPricingWorkflowTests(TestCase):
         self.order.save(update_fields=['approved'])
         LaborLine.objects.create(repair_order=self.order, service_item=self.service, hours=2, rate=350)
         PartsLine.objects.create(repair_order=self.order, part=self.part, quantity=2, unit_price=175)
+        RepairEstimate.objects.create(
+            repair_order=self.order,
+            version=1,
+            labor_amount=Decimal('700.00'),
+            parts_amount=Decimal('350.00'),
+            total_amount=Decimal('1050.00'),
+            status='approved',
+        )
         form = InvoiceForm(data={
             'repair_order': self.order.pk,
             'service_amount': '1.00',
@@ -150,6 +174,37 @@ class RepairPricingWorkflowTests(TestCase):
 
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data['service_amount'], Decimal('1050.00'))
+        self.assertEqual(form.cleaned_data['service_amount'], Decimal('1050.00'))
+
+    def test_invoice_form_uses_approved_estimate_and_rejects_zero_amount(self):
+        self.order.approved = True
+        self.order.save(update_fields=['approved'])
+        estimate = RepairEstimate.objects.create(
+            repair_order=self.order,
+            version=1,
+            labor_amount=Decimal('700.00'),
+            parts_amount=Decimal('350.00'),
+            total_amount=Decimal('1050.00'),
+            status='approved',
+        )
+        invoice_data = {
+            'repair_order': self.order.pk,
+            'service_amount': '0.00',
+            'issue_date': '2026-10-08',
+            'due_date': '2026-10-09',
+            'discount': '0.00',
+            'notes': '',
+        }
+
+        form = InvoiceForm(data=invoice_data)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['service_amount'], Decimal('825.00'))
+
+        estimate.total_amount = Decimal('0.00')
+        estimate.save(update_fields=['total_amount'])
+        zero_form = InvoiceForm(data=invoice_data)
+        self.assertFalse(zero_form.is_valid())
+        self.assertIn('repair_order', zero_form.errors)
 
     def test_tax_total_is_rounded_to_cents(self):
         invoice = Invoice.objects.create(
@@ -216,18 +271,20 @@ class RepairPricingWorkflowTests(TestCase):
         self.assertFalse(parts_form.is_valid())
         self.assertIn('quantity', parts_form.errors)
 
-    def test_estimate_form_rejects_mismatched_labor_and_part_references(self):
-        form = RepairEstimateLineForm(data={
-            'line_type': 'labor',
-            'service_item': self.service.pk,
-            'part': self.part.pk,
-            'quantity': '1',
-            'unit_price': '',
-            'notes': '',
-        })
+    def test_estimate_row_forms_have_clear_picker_labels_and_quantity_rules(self):
+        labor_form = EstimateLaborForm()
+        part_form = EstimatePartForm()
 
-        self.assertFalse(form.is_valid())
-        self.assertIn('part', form.errors)
+        self.assertEqual(labor_form.fields['service_item'].empty_label, 'Choose service item')
+        self.assertEqual(part_form.fields['part'].empty_label, 'Choose part')
+        self.assertFalse(EstimateLaborForm(data={
+            'service_item': self.service.pk,
+            'hours': '0',
+        }).is_valid())
+        self.assertFalse(EstimatePartForm(data={
+            'part': self.part.pk,
+            'quantity': '0',
+        }).is_valid())
 
     def test_invoice_form_rejects_excessive_discounts_and_early_due_dates(self):
         self.order.approved = True
@@ -279,11 +336,14 @@ class RepairPricingWorkflowTests(TestCase):
         admin = User.objects.create_user(username='repair-editaudit-admin', password='test-password', is_staff=True)
         mechanic = User.objects.create_user(username='repair-editaudit-mechanic', password='test-password')
         UserProfile.objects.create(user=mechanic, role='mechanic')
+        self.order.approved = True
+        self.order.save(update_fields=['approved'])
         self.client.force_login(admin)
 
         response = self.client.post(reverse('repair_order_edit', args=[self.order.pk]), {
             'vehicle': self.order.vehicle_id,
             'assigned_tech': mechanic.pk,
+            'assignment_reason': 'The mechanic has the required brake-system experience.',
             'description': 'Updated repair description',
             'internal_notes': '',
             'mileage_in': '100',
@@ -294,6 +354,10 @@ class RepairPricingWorkflowTests(TestCase):
         self.assertEqual(entry.actor, admin)
         self.assertEqual(entry.details['assignment'], {'from_user_id': None, 'to_user_id': mechanic.pk})
         self.assertIn('mileage_in', entry.details['changed_fields'])
+        assignment_event = RepairOrderEvent.objects.get(repair_order=self.order, event_type='assignment')
+        self.assertTrue(assignment_event.customer_visible)
+        self.assertIn('required brake-system experience', assignment_event.note)
+        self.assertTrue(Notification.objects.filter(recipient=mechanic, repair_order=self.order).exists())
 
     def test_status_review_is_post_only_and_rejections_are_audited(self):
         admin = User.objects.create_user(username='status-audit-admin', password='test-password', is_staff=True)
@@ -308,14 +372,23 @@ class RepairPricingWorkflowTests(TestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.order.pending_status, 'waiting')
 
-        post_response = self.client.post(url)
+        missing_reason = self.client.post(url)
+        self.assertRedirects(missing_reason, reverse('dashboard'))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.pending_status, 'waiting')
+
+        post_response = self.client.post(url, {'reason': 'The requested parts are not ready.'})
 
         self.assertRedirects(post_response, reverse('dashboard'))
         self.order.refresh_from_db()
         self.assertEqual(self.order.pending_status, '')
-        entry = AuditLog.objects.get(action='repair_status_proposal_rejected', repair_order=self.order)
+        entry = AuditLog.objects.get(action='status_rejected', repair_order=self.order)
         self.assertEqual(entry.actor, admin)
-        self.assertEqual(entry.details, {'proposed_status': 'waiting'})
+        self.assertEqual(entry.details['proposed_status'], 'waiting')
+        self.assertEqual(entry.details['reason'], 'The requested parts are not ready.')
+        event = RepairOrderEvent.objects.get(repair_order=self.order, event_type='status_rejected')
+        self.assertTrue(event.customer_visible)
+        self.assertIn('The requested parts are not ready.', event.note)
 
     def test_part_usage_records_stock_audit(self):
         admin = User.objects.create_user(username='stockauditadmin', password='test-password', is_staff=True)
@@ -744,6 +817,17 @@ class PasswordResetTests(TestCase):
         self.assertTrue(self.token.used)
         self.assertIsNone(PasswordResetToken.validate_token(self.raw_token))
         self.assertEqual(PasswordResetToken.validate_token(new_raw_token), new_token)
+
+    def test_reset_tokens_expire_after_about_15_minutes(self):
+        start = timezone.now()
+        raw_token, token = PasswordResetToken.generate_for_user(self.user)
+        end = timezone.now()
+
+        self.assertNotEqual(raw_token, self.raw_token)
+        expires_in = token.expires_at - start
+        self.assertGreaterEqual(expires_in, timedelta(minutes=14, seconds=30))
+        self.assertLessEqual(expires_in, timedelta(minutes=15, seconds=30))
+        self.assertLessEqual(token.expires_at - end, timedelta(minutes=15, seconds=30))
 
     def test_forgot_password_response_does_not_reveal_account_or_delivery_state(self):
         generic_message = 'If an account with that email exists, a reset link has been sent.'
@@ -1439,6 +1523,28 @@ class CustomerRepairOrderSummaryTests(TestCase):
 
         self.assertRedirects(response, reverse('invoice_detail', args=[self.invoice.pk]))
 
+    def test_invoice_create_page_provides_approved_estimate_amount_map(self):
+        admin = User.objects.create_user(username='invoice-preview-admin', password='test-password')
+        UserProfile.objects.create(user=admin, role='admin')
+        preview_order = RepairOrder.objects.create(
+            vehicle=self.order.vehicle,
+            description='Approved estimate preview',
+            approved=True,
+        )
+        RepairEstimate.objects.create(
+            repair_order=preview_order,
+            version=1,
+            total_amount=Decimal('640.00'),
+            status='approved',
+        )
+        self.client.force_login(admin)
+
+        response = self.client.get(reverse('invoice_create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['invoice_amounts'][str(preview_order.pk)], '640.00')
+        self.assertContains(response, 'id="invoice-amounts"')
+
     def test_invoice_edits_record_financial_before_and_after_values(self):
         admin = User.objects.create_user(username='invoiceeditadmin', password='test-password', is_staff=True)
         self.client.force_login(admin)
@@ -1458,7 +1564,9 @@ class CustomerRepairOrderSummaryTests(TestCase):
         self.assertRedirects(response, reverse('invoice_detail', args=[self.invoice.pk]))
         entry = AuditLog.objects.get(action='invoice_updated', object_id=self.invoice.pk)
         self.assertEqual(entry.actor, admin)
-        self.assertEqual(entry.details['changes']['tax_rate'], {'from': '15.00', 'to': '10.00'})
+        self.assertNotIn('tax_rate', entry.details['changes'])
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.tax_rate, Decimal('15.00'))
         self.assertEqual(
             entry.details['changes']['due_date'],
             {'from': old_due_date.isoformat(), 'to': new_due_date.isoformat()},
@@ -2019,6 +2127,7 @@ class RoleBoundaryTests(TestCase):
             vehicle=vehicle,
             assigned_tech=self.mechanic,
             description='Customer-visible document test',
+            approved=True,
         )
         upload = SimpleUploadedFile('inspection.pdf', b'%PDF-mechanic', content_type='application/pdf')
         self.client.force_login(self.mechanic)
@@ -2040,7 +2149,7 @@ class RoleBoundaryTests(TestCase):
         self.assertEqual(b''.join(download.streaming_content), b'%PDF-mechanic')
         document.file.delete(save=False)
 
-    def test_assigned_mechanic_can_prepare_quote_before_customer_approval(self):
+    def test_admin_prepares_quote_then_customer_approves_before_mechanic_assignment(self):
         vehicle = Vehicle.objects.create(
             customer=self.customer,
             make='Toyota',
@@ -2049,15 +2158,37 @@ class RoleBoundaryTests(TestCase):
         )
         order = RepairOrder.objects.create(
             vehicle=vehicle,
-            assigned_tech=self.mechanic,
             description='Quote preparation test',
         )
         service = ServiceItem.objects.create(name='Diagnostic', labor_hours=1, labor_rate=200)
+        admin = User.objects.create_user(username='quote-admin', password='test-password', is_staff=True)
+        UserProfile.objects.create(user=admin, role='admin')
         self.client.force_login(self.mechanic)
+        self.assertEqual(self.client.get(reverse('repair_order_detail', args=[order.pk])).status_code, 404)
+        self.client.force_login(admin)
+        form_page = self.client.get(reverse('repair_order_detail', args=[order.pk]))
+        self.assertContains(form_page, 'Labor / Services')
+        self.assertContains(form_page, 'Parts / Materials')
+        self.assertContains(form_page, '+ Add Labor Service')
+        self.assertContains(form_page, '+ Add Part')
+        self.assertContains(form_page, 'labor-row-template')
+        self.assertContains(form_page, 'parts-row-template')
 
         response = self.client.post(
             reverse('repair_estimate_line_add', args=[order.pk]),
-            {'line_type': 'labor', 'service_item': service.pk, 'quantity': '1', 'notes': 'Initial diagnosis'},
+            {
+                'labor-TOTAL_FORMS': '1',
+                'labor-INITIAL_FORMS': '0',
+                'labor-MIN_NUM_FORMS': '0',
+                'labor-MAX_NUM_FORMS': '50',
+                'labor-0-service_item': str(service.pk),
+                'labor-0-hours': '1',
+                'parts-TOTAL_FORMS': '0',
+                'parts-INITIAL_FORMS': '0',
+                'parts-MIN_NUM_FORMS': '0',
+                'parts-MAX_NUM_FORMS': '50',
+                'notes': 'Initial diagnosis',
+            },
         )
 
         self.assertRedirects(response, reverse('repair_order_detail', args=[order.pk]))
@@ -2079,6 +2210,105 @@ class RoleBoundaryTests(TestCase):
         approval_event = RepairOrderEvent.objects.get(repair_order=order, event_type='approval')
         self.assertEqual(approval_event.metadata['estimate_total'], '200.00')
 
+        self.client.force_login(admin)
+        assign_response = self.client.post(reverse('repair_order_edit', args=[order.pk]), {
+            'vehicle': vehicle.pk,
+            'assigned_tech': self.mechanic.pk,
+            'assignment_reason': 'The approved brake diagnostic requires this technician.',
+            'description': order.description,
+            'internal_notes': '',
+            'mileage_in': '0',
+        })
+        self.assertRedirects(assign_response, reverse('repair_order_detail', args=[order.pk]))
+        order.refresh_from_db()
+        self.assertEqual(order.assigned_tech, self.mechanic)
+        self.client.force_login(self.mechanic)
+        self.assertEqual(self.client.get(reverse('repair_order_detail', args=[order.pk])).status_code, 200)
+
+    def test_admin_can_add_multiple_estimate_services_and_parts_before_customer_approval(self):
+        vehicle = Vehicle.objects.create(
+            customer=self.customer,
+            make='Toyota',
+            model='Corolla',
+            year=2020,
+        )
+        order = RepairOrder.objects.create(
+            vehicle=vehicle,
+            description='Combined estimate test',
+        )
+        service_one = ServiceItem.objects.create(name='Brake inspection', labor_hours=1, labor_rate=200)
+        service_two = ServiceItem.objects.create(name='Brake flush', labor_hours=1, labor_rate=100)
+        part_one = Part.objects.create(name='Brake pad', sell_price=50, cost_price=25, stock_qty=10)
+        part_two = Part.objects.create(name='Brake rotor', sell_price=120, cost_price=70, stock_qty=4)
+        admin = User.objects.create_user(username='multi-quote-admin', password='test-password', is_staff=True)
+        UserProfile.objects.create(user=admin, role='admin')
+        self.client.force_login(admin)
+
+        response = self.client.post(
+            reverse('repair_estimate_line_add', args=[order.pk]),
+            {
+                'labor-TOTAL_FORMS': '2',
+                'labor-INITIAL_FORMS': '0',
+                'labor-MIN_NUM_FORMS': '0',
+                'labor-MAX_NUM_FORMS': '50',
+                'labor-0-service_item': str(service_one.pk),
+                'labor-0-hours': '1.5',
+                'labor-1-service_item': str(service_two.pk),
+                'labor-1-hours': '2',
+                'parts-TOTAL_FORMS': '2',
+                'parts-INITIAL_FORMS': '0',
+                'parts-MIN_NUM_FORMS': '0',
+                'parts-MAX_NUM_FORMS': '50',
+                'parts-0-part': str(part_one.pk),
+                'parts-0-quantity': '2',
+                'parts-1-part': str(part_two.pk),
+                'parts-1-quantity': '1',
+                'notes': 'Include all diagnosed brake work.',
+            },
+        )
+
+        self.assertRedirects(response, reverse('repair_order_detail', args=[order.pk]))
+        estimate_lines = list(RepairEstimateLine.objects.filter(repair_order=order).order_by('created_at', 'pk'))
+        self.assertEqual(len(estimate_lines), 4)
+        self.assertEqual(sum(line.line_total for line in estimate_lines), Decimal('720.00'))
+        self.assertEqual({line.notes for line in estimate_lines}, {'Include all diagnosed brake work.'})
+
+    def test_incomplete_dynamic_estimate_row_is_rejected_without_saving(self):
+        vehicle = Vehicle.objects.create(
+            customer=self.customer,
+            make='Toyota',
+            model='Corolla',
+            year=2020,
+        )
+        order = RepairOrder.objects.create(
+            vehicle=vehicle,
+            description='Incomplete estimate row test',
+        )
+        estimate_admin = User.objects.create_user(username='invalid-row-admin', password='test-password', is_staff=True)
+        UserProfile.objects.create(user=estimate_admin, role='admin')
+        self.client.force_login(estimate_admin)
+
+        response = self.client.post(
+            reverse('repair_estimate_line_add', args=[order.pk]),
+            {
+                'labor-TOTAL_FORMS': '1',
+                'labor-INITIAL_FORMS': '0',
+                'labor-MIN_NUM_FORMS': '0',
+                'labor-MAX_NUM_FORMS': '50',
+                'labor-0-service_item': '',
+                'labor-0-hours': '1',
+                'parts-TOTAL_FORMS': '0',
+                'parts-INITIAL_FORMS': '0',
+                'parts-MIN_NUM_FORMS': '0',
+                'parts-MAX_NUM_FORMS': '50',
+                'notes': '',
+            },
+            follow=True,
+        )
+
+        self.assertTrue(list(response.context['messages']))
+        self.assertFalse(RepairEstimateLine.objects.filter(repair_order=order).exists())
+
 
 class MechanicJobAssignmentTests(TestCase):
     def setUp(self):
@@ -2090,6 +2320,8 @@ class MechanicJobAssignmentTests(TestCase):
             first_name='Jamie',
             last_name='Driver',
             email='driver@example.com',
+            phone='0712345678',
+            address='42 Main Street',
         )
         self.vehicle = Vehicle.objects.create(
             customer=self.customer,
@@ -2101,12 +2333,64 @@ class MechanicJobAssignmentTests(TestCase):
             vehicle=self.vehicle,
             assigned_tech=self.mechanic,
             description='Brake inspection',
+            approved=True,
         )
+
+    def test_vehicle_form_rejects_duplicate_normalized_license_plate(self):
+        self.vehicle.license_plate = 'ABC 123 GP'
+        self.vehicle.save(update_fields=['license_plate'])
+        form = VehicleForm(data={
+            'customer': self.customer.pk,
+            'make': 'Toyota',
+            'model': 'Corolla',
+            'year': '2024',
+            'license_plate': 'abc-123gp',
+            'vin': '',
+            'color': '',
+            'mileage': '0',
+            'service_plan': '',
+            'recent_service_history': '',
+            'notes': '',
+        })
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('license_plate', form.errors)
 
     def test_technician_dropdown_only_lists_mechanics(self):
         form = RepairOrderForm()
 
         self.assertEqual(list(form.fields['assigned_tech'].queryset), [self.mechanic])
+        self.assertTrue(form.fields['assigned_tech'].disabled)
+
+        self.order.approved = False
+        self.order.save(update_fields=['approved'])
+        unapproved_form = RepairOrderForm(instance=self.order)
+        self.assertTrue(unapproved_form.fields['assigned_tech'].disabled)
+
+        self.order.approved = True
+        self.order.save(update_fields=['approved'])
+        approved_form = RepairOrderForm(instance=self.order)
+        self.assertFalse(approved_form.fields['assigned_tech'].disabled)
+
+    def test_admin_dashboard_queues_only_approved_unassigned_orders(self):
+        approved_order = RepairOrder.objects.create(
+            vehicle=self.vehicle,
+            description='Approved and ready for assignment',
+            approved=True,
+        )
+        unapproved_order = RepairOrder.objects.create(
+            vehicle=self.vehicle,
+            description='Still awaiting customer approval',
+            approved=False,
+        )
+        self.client.force_login(self.non_mechanic)
+
+        dashboard = self.client.get(reverse('dashboard'))
+
+        queue = list(dashboard.context['approved_unassigned_orders'])
+        self.assertIn(approved_order, queue)
+        self.assertNotIn(unapproved_order, queue)
+        self.assertContains(dashboard, 'Customer-approved repairs awaiting mechanic assignment')
 
     def test_create_job_action_is_only_on_admin_dashboard(self):
         self.client.force_login(self.mechanic)
@@ -2134,10 +2418,38 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(self.order.status, 'pending')
         self.assertEqual(self.order.pending_status, 'in_progress')
 
+    def test_unapproved_repair_is_not_visible_or_assignable_to_mechanic(self):
+        self.order.approved = False
+        self.order.assigned_tech = None
+        self.order.save(update_fields=['approved', 'assigned_tech'])
+        self.client.force_login(self.non_mechanic)
+
+        edit_page = self.client.get(reverse('repair_order_edit', args=[self.order.pk]))
+        self.assertNotIn('assigned_tech', edit_page.context['form'].fields)
+        forged_assignment = self.client.post(reverse('repair_order_edit', args=[self.order.pk]), {
+            'assigned_tech': self.mechanic.pk,
+            'assignment_reason': 'Attempt before approval',
+            'description': self.order.description,
+            'internal_notes': '',
+            'mileage_in': self.order.mileage_in,
+        })
+        self.assertEqual(forged_assignment.status_code, 200)
+        self.assertIn('__all__', forged_assignment.context['form'].errors)
+
+        self.client.force_login(self.mechanic)
+        self.assertNotIn(self.order, self.client.get(reverse('dashboard')).context['assigned_orders'])
+        self.assertNotIn(self.order, self.client.get(reverse('repair_order_list')).context['orders'])
+        self.assertEqual(self.client.get(reverse('repair_order_detail', args=[self.order.pk])).status_code, 404)
+        self.assertEqual(
+            self.client.post(reverse('repair_order_decision', args=[self.order.pk, 'accept'])).status_code,
+            404,
+        )
+
     def test_appointment_acceptance_proposes_status_for_admin_approval(self):
         appointment_order = RepairOrder.objects.create(
             vehicle=self.vehicle,
             description='Tire rotation',
+            approved=True,
         )
         appointment = Appointment.objects.create(
             customer=self.customer,
@@ -2161,9 +2473,16 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(appointment_order.pending_status, 'in_progress')
 
     def test_mechanic_appointment_list_only_shows_their_assignments(self):
+        appointment_order = RepairOrder.objects.create(
+            vehicle=self.vehicle,
+            assigned_tech=self.mechanic,
+            description='Assigned repair',
+            approved=True,
+        )
         assigned_appointment = Appointment.objects.create(
             customer=self.customer,
             vehicle=self.vehicle,
+            repair_order=appointment_order,
             date_time='2030-05-20T10:30:00Z',
             service_desc='Assigned service',
             assigned_mechanic=self.mechanic,
@@ -2190,6 +2509,128 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(list(response.context['appointments']), [assigned_appointment])
 
+    def test_mechanic_must_explain_appointment_decline_and_customer_sees_feedback(self):
+        self.order.approved = True
+        self.order.save(update_fields=['approved'])
+        appointment = Appointment.objects.create(
+            customer=self.customer,
+            vehicle=self.vehicle,
+            repair_order=self.order,
+            date_time='2030-05-20T10:30:00Z',
+            service_desc='Brake inspection',
+            assigned_mechanic=self.mechanic,
+        )
+        customer_user = User.objects.create_user(
+            username='appointment-feedback-customer',
+            email=self.customer.email,
+            password='test-password',
+        )
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.client.force_login(self.mechanic)
+
+        missing_reason = self.client.post(
+            reverse('appointment_decision', args=[appointment.pk, 'decline']),
+        )
+        self.assertRedirects(missing_reason, reverse('appointment_list'))
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.assignment_status, 'pending')
+
+        reason = 'I am not certified for this brake system.'
+        response = self.client.post(
+            reverse('appointment_decision', args=[appointment.pk, 'decline']),
+            {'reason': reason},
+        )
+
+        self.assertRedirects(response, reverse('dashboard'))
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.assignment_reason, reason)
+        self.order.refresh_from_db()
+        self.assertIsNone(self.order.assigned_tech)
+        event = RepairOrderEvent.objects.get(repair_order=self.order, event_type='assignment')
+        self.assertTrue(event.customer_visible)
+        self.assertIn(reason, event.note)
+
+        mechanic_dashboard = self.client.get(reverse('dashboard'))
+        self.assertNotIn(self.order, mechanic_dashboard.context['assigned_orders'])
+        self.assertNotIn(appointment, mechanic_dashboard.context['my_assignments'])
+        mechanic_appointments = self.client.get(reverse('appointment_list'))
+        self.assertNotIn(appointment, mechanic_appointments.context['appointments'])
+        self.assertRedirects(
+            self.client.get(reverse('appointment_edit', args=[appointment.pk])),
+            reverse('appointment_list'),
+        )
+        self.assertRedirects(
+            self.client.post(reverse('appointment_decision', args=[appointment.pk, 'accept'])),
+            reverse('appointment_list'),
+        )
+
+        self.client.force_login(customer_user)
+        customer_detail = self.client.get(reverse('repair_order_detail', args=[self.order.pk]))
+        self.assertContains(customer_detail, reason)
+        appointment_list = self.client.get(reverse('appointment_list'))
+        self.assertContains(appointment_list, reason)
+
+    def test_admin_mechanic_reassignment_requires_reason_and_updates_technician(self):
+        self.order.approved = True
+        self.order.save(update_fields=['approved'])
+        replacement = User.objects.create_user(username='replacement-mechanic', password='test-password')
+        UserProfile.objects.create(user=replacement, role='mechanic')
+        appointment = Appointment.objects.create(
+            customer=self.customer,
+            vehicle=self.vehicle,
+            repair_order=self.order,
+            date_time='2030-05-20T10:30:00Z',
+            service_desc='Brake inspection',
+            assigned_mechanic=self.mechanic,
+        )
+        other_customer = Customer.objects.create(
+            first_name='Different',
+            last_name='Customer',
+            email='different-customer@example.com',
+        )
+        other_vehicle = Vehicle.objects.create(
+            customer=other_customer,
+            make='Honda',
+            model='Civic',
+            year=2024,
+        )
+        payload = {
+            'customer': other_customer.pk,
+            'vehicle': other_vehicle.pk,
+            'date_time': '2030-05-20T10:30',
+            'service_desc': 'Brake inspection',
+            'assigned_mechanic': replacement.pk,
+            'assignment_status': 'pending',
+            'assignment_reason': '',
+            'notes': '',
+        }
+        self.client.force_login(self.non_mechanic)
+        edit_page = self.client.get(reverse('appointment_edit', args=[appointment.pk]))
+        self.assertTrue(edit_page.context['form'].fields['customer'].disabled)
+        self.assertTrue(edit_page.context['form'].fields['vehicle'].disabled)
+
+        rejected_form = self.client.post(reverse('appointment_edit', args=[appointment.pk]), payload)
+        self.assertEqual(rejected_form.status_code, 200)
+        self.assertIn('assignment_reason', rejected_form.context['form'].errors)
+
+        reason = 'The previous mechanic is unavailable this week.'
+        payload['assignment_reason'] = reason
+        response = self.client.post(reverse('appointment_edit', args=[appointment.pk]), payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('assignment_status', response.context['form'].errors)
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.customer_id, self.customer.pk)
+        self.assertEqual(appointment.vehicle_id, self.vehicle.pk)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.assigned_tech, replacement)
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.assignment_status, 'pending')
+        event = RepairOrderEvent.objects.get(repair_order=self.order, event_type='assignment')
+        self.assertTrue(event.customer_visible)
+        self.assertIn(reason, event.note)
+        self.assertTrue(Notification.objects.filter(recipient=replacement, repair_order=self.order).exists())
+
     def test_mechanic_cannot_accept_appointment_via_get(self):
         appointment = Appointment.objects.create(
             customer=self.customer,
@@ -2211,9 +2652,16 @@ class MechanicJobAssignmentTests(TestCase):
 
     @patch('workshop.views.Appointment.has_schedule_conflict')
     def test_appointment_acceptance_checks_schedule_inside_transaction(self, conflict_check):
+        appointment_order = RepairOrder.objects.create(
+            vehicle=self.vehicle,
+            assigned_tech=self.mechanic,
+            description='Approved appointment schedule check',
+            approved=True,
+        )
         appointment = Appointment.objects.create(
             customer=self.customer,
             vehicle=self.vehicle,
+            repair_order=appointment_order,
             date_time='2026-10-01T09:00:00Z',
             service_desc='Brake inspection',
             assigned_mechanic=self.mechanic,
@@ -2262,9 +2710,16 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(appointment.assignment_status, 'pending')
 
     def test_mechanic_appointment_edit_queues_status_for_admin_approval(self):
+        appointment_order = RepairOrder.objects.create(
+            vehicle=self.vehicle,
+            assigned_tech=self.mechanic,
+            description='Approved appointment repair',
+            approved=True,
+        )
         appointment = Appointment.objects.create(
             customer=self.customer,
             vehicle=self.vehicle,
+            repair_order=appointment_order,
             date_time='2026-10-01T09:00:00Z',
             service_desc='Brake inspection',
             assigned_mechanic=self.mechanic,
@@ -2285,10 +2740,10 @@ class MechanicJobAssignmentTests(TestCase):
         )
 
         self.assertRedirects(response, reverse('appointment_list'))
-        self.order.refresh_from_db()
+        appointment_order.refresh_from_db()
         appointment.refresh_from_db()
-        self.assertEqual(self.order.status, 'pending')
-        self.assertEqual(self.order.pending_status, '')
+        self.assertEqual(appointment_order.status, 'pending')
+        self.assertEqual(appointment_order.pending_status, 'in_progress')
         self.assertIsNotNone(appointment.repair_order_id)
         self.assertEqual(appointment.repair_order.pending_status, 'in_progress')
         appointment_audit = AuditLog.objects.get(action='appointment_updated', object_id=appointment.pk)
@@ -2403,6 +2858,66 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(order_audit.details['appointment_id'], appointment.pk)
 
     @patch('workshop.views.send_service_request_confirmation')
+    def test_customer_can_book_new_service_for_completed_vehicle_without_reregistering_it(self, send_confirmation):
+        vehicle = Vehicle.objects.create(
+            customer=self.customer,
+            make='Toyota',
+            model='Hilux',
+            year=2022,
+            license_plate='NC 482-910',
+            mileage=65000,
+        )
+        previous_order = RepairOrder.objects.create(
+            vehicle=vehicle,
+            description='Previous oil service',
+            status='completed',
+            approved=True,
+        )
+        customer_user = User.objects.create_user(
+            username='returning-vehicle-customer',
+            email=self.customer.email,
+            password='test-password',
+        )
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.client.force_login(customer_user)
+
+        dashboard = self.client.get(reverse('dashboard'))
+        self.assertContains(dashboard, 'My Vehicles')
+        self.assertContains(dashboard, 'NC 482-910')
+        self.assertContains(dashboard, f'?vehicle={vehicle.pk}')
+
+        booking_page = self.client.get(reverse('appointment_create'), {'vehicle': vehicle.pk})
+        self.assertEqual(booking_page.status_code, 200)
+        self.assertContains(booking_page, 'Book Service for: 2022 Toyota Hilux')
+        self.assertTrue(booking_page.context['form'].fields['vehicle_make'].disabled)
+        self.assertTrue(booking_page.context['form'].fields['vehicle_model'].disabled)
+        self.assertFalse(booking_page.context['form'].fields['vehicle_mileage'].disabled)
+        self.assertFalse(booking_page.context['form'].fields['vehicle_service_plan'].disabled)
+        self.assertNotIn('requested_services', booking_page.context['form'].fields)
+
+        response = self.client.post(reverse('appointment_create'), {
+            'vehicle': vehicle.pk,
+            'vehicle_mileage': '68000',
+            'vehicle_service_plan': 'Premium maintenance plan',
+            'date_time': '2030-05-20T10:30',
+            'service_desc': 'Wheel Alignment & Balancing. Car pulls slightly to the left.',
+            'notes': 'Car pulls slightly to the left. Please inspect before a long trip.',
+        })
+
+        self.assertRedirects(response, reverse('dashboard'))
+        appointment = Appointment.objects.get(vehicle=vehicle)
+        self.assertEqual(appointment.service_desc, 'Wheel Alignment & Balancing. Car pulls slightly to the left.')
+        self.assertEqual(appointment.notes, 'Car pulls slightly to the left. Please inspect before a long trip.')
+        vehicle.refresh_from_db()
+        self.assertEqual(vehicle.mileage, 68000)
+        self.assertEqual(vehicle.service_plan, 'Premium maintenance plan')
+        self.assertEqual(vehicle.repair_orders.count(), 2)
+        self.assertEqual(vehicle.repair_orders.get(pk=previous_order.pk).status, 'completed')
+        self.assertEqual(appointment.repair_order.mileage_in, 68000)
+        self.assertIn('Car pulls slightly to the left.', appointment.repair_order.internal_notes)
+        send_confirmation.assert_called_once()
+
+    @patch('workshop.views.send_service_request_confirmation')
     def test_similar_pending_request_for_same_vehicle_is_blocked(self, send_confirmation):
         customer_user = User.objects.create_user(username='dup-customer', email=self.customer.email, password='test-password')
         UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
@@ -2438,6 +2953,96 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(Vehicle.objects.filter(customer=self.customer).count(), before)
         self.assertEqual(first.status_code, 302)
         self.assertEqual(second.status_code, 200)
+
+    @patch('workshop.views.send_service_request_confirmation')
+    def test_repeat_service_request_by_plate_reuses_vehicle_and_keeps_new_notes(self, send_confirmation):
+        vehicle = Vehicle.objects.create(
+            customer=self.customer,
+            make='Toyota',
+            model='Corolla',
+            year=2021,
+            license_plate='ABC 123 GP',
+            mileage=45000,
+            notes='Existing vehicle notes stay unchanged.',
+        )
+        customer_user = User.objects.create_user(
+            username='plate-customer',
+            email=self.customer.email,
+            password='test-password',
+        )
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.client.force_login(customer_user)
+
+        booking_page = self.client.get(reverse('appointment_create'))
+        self.assertContains(booking_page, '/vehicles/lookup/')
+        self.assertContains(booking_page, 'Existing vehicle details will be kept')
+
+        lookup = self.client.get(reverse('vehicle_lookup'), {'plate': 'abc-123gp'})
+        self.assertEqual(lookup.status_code, 200)
+        self.assertTrue(lookup.json()['found'])
+        self.assertEqual(lookup.json()['vehicle']['id'], vehicle.pk)
+
+        response = self.client.post(reverse('appointment_create'), {
+            'vehicle': str(vehicle.pk),
+            'vehicle_license_plate': 'abc-123gp',
+            'date_time': '2030-05-20T10:30',
+            'service_desc': 'Replace engine oil and filter',
+            'notes': 'Customer reports a new vibration.',
+        })
+
+        self.assertRedirects(response, reverse('dashboard'))
+        appointment = Appointment.objects.get(service_desc='Replace engine oil and filter')
+        self.assertEqual(appointment.vehicle_id, vehicle.pk)
+        self.assertEqual(appointment.notes, 'Customer reports a new vibration.')
+        self.assertEqual(Vehicle.objects.filter(customer=self.customer, license_plate='ABC 123 GP').count(), 1)
+        vehicle.refresh_from_db()
+        self.assertEqual(vehicle.notes, 'Existing vehicle notes stay unchanged.')
+        send_confirmation.assert_called_once()
+
+    def test_plate_lookup_does_not_expose_another_customer_vehicle(self):
+        other_customer = Customer.objects.create(
+            first_name='Other',
+            last_name='Plate Owner',
+            email='other-plate-owner@example.com',
+        )
+        Vehicle.objects.create(
+            customer=other_customer,
+            make='Honda',
+            model='Civic',
+            year=2022,
+            license_plate='XYZ 456',
+        )
+        customer_user = User.objects.create_user(
+            username='plate-privacy-customer',
+            email=self.customer.email,
+            password='test-password',
+        )
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.client.force_login(customer_user)
+
+        response = self.client.get(reverse('vehicle_lookup'), {'plate': 'xyz456'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()['found'])
+
+    def test_unmatched_plate_requires_make_model_and_year(self):
+        customer_user = User.objects.create_user(
+            username='new-plate-customer',
+            email=self.customer.email,
+            password='test-password',
+        )
+        UserProfile.objects.create(user=customer_user, role='customer', is_verified=True)
+        self.client.force_login(customer_user)
+
+        response = self.client.post(reverse('appointment_create'), {
+            'vehicle_license_plate': 'NEW 123',
+            'date_time': '2030-05-20T10:30',
+            'service_desc': 'New service request',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('vehicle_license_plate', response.context['form'].errors)
+        self.assertFalse(Vehicle.objects.filter(customer=self.customer, license_plate='NEW 123').exists())
 
     def test_mechanic_status_menu_only_offers_admin_reviewable_proposals(self):
         self.client.force_login(self.mechanic)
@@ -2517,8 +3122,8 @@ class MechanicJobAssignmentTests(TestCase):
         response = self.client.get(reverse('repair_order_detail', args=[self.order.pk]))
 
         self.assertContains(response, 'Available after customer approval')
-        self.assertNotContains(response, '+ Add Labor')
-        self.assertNotContains(response, '+ Add Part')
+        self.assertNotContains(response, f'action="/repairs/{self.order.pk}/labor/"')
+        self.assertNotContains(response, f'action="/repairs/{self.order.pk}/parts/"')
 
     def test_status_proposal_is_hidden_from_customer_until_admin_approves(self):
         self.customer.phone = '0712345678'
@@ -2609,7 +3214,7 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertRedirects(response, reverse('repair_order_detail', args=[self.order.pk]))
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'pending')
-        self.assertFalse(self.order.approved)
+        self.assertTrue(self.order.approved)
 
     def test_admin_repair_order_edit_cannot_change_status_or_customer_approval(self):
         self.client.force_login(self.non_mechanic)
@@ -2632,7 +3237,7 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertRedirects(response, reverse('repair_order_detail', args=[self.order.pk]))
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'pending')
-        self.assertFalse(self.order.approved)
+        self.assertTrue(self.order.approved)
 
     def test_admin_repair_order_creation_starts_pending_and_unapproved(self):
         self.client.force_login(self.non_mechanic)
@@ -2665,6 +3270,7 @@ class MechanicJobAssignmentTests(TestCase):
 
         response = self.client.post(
             reverse('repair_order_status_review', args=[self.order.pk, 'reject']),
+            {'reason': 'The requested parts are not ready.'},
         )
 
         self.assertRedirects(response, reverse('dashboard'))
@@ -2687,14 +3293,31 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertEqual(self.order.pending_status, '')
 
     def test_mechanic_can_decline_assigned_job_for_reassignment(self):
+        self.order.approved = True
+        self.order.save(update_fields=['approved'])
         self.client.force_login(self.mechanic)
 
-        response = self.client.post(reverse('repair_order_decision', args=[self.order.pk, 'decline']))
+        response = self.client.post(
+            reverse('repair_order_decision', args=[self.order.pk, 'decline']),
+            {'reason': 'I do not have the required equipment.'},
+        )
 
         self.assertRedirects(response, reverse('dashboard'))
         self.order.refresh_from_db()
         self.assertIsNone(self.order.assigned_tech)
         self.assertEqual(self.order.status, 'pending')
+        declined_event = RepairOrderEvent.objects.get(repair_order=self.order, event_type='assignment')
+        self.assertTrue(declined_event.customer_visible)
+        self.assertIn('I do not have the required equipment.', declined_event.note)
+        mechanic_dashboard = self.client.get(reverse('dashboard'))
+        self.assertNotIn(self.order, mechanic_dashboard.context['assigned_orders'])
+        mechanic_repairs = self.client.get(reverse('repair_order_list'))
+        self.assertNotIn(self.order, mechanic_repairs.context['orders'])
+        self.assertEqual(self.client.get(reverse('repair_order_detail', args=[self.order.pk])).status_code, 404)
+        self.assertRedirects(
+            self.client.post(reverse('repair_estimate_line_add', args=[self.order.pk]), {}),
+            reverse('dashboard'),
+        )
 
     def test_mechanic_waiting_for_parts_filter_includes_pending_proposals(self):
         self.order.status = 'pending'
@@ -2710,6 +3333,8 @@ class MechanicJobAssignmentTests(TestCase):
         self.assertContains(response, 'awaiting approval')
 
     def test_admin_cannot_create_invoice_until_customer_approves(self):
+        self.order.approved = False
+        self.order.save(update_fields=['approved'])
         self.client.force_login(self.non_mechanic)
         response = self.client.get(reverse('invoice_create'), {'ro': self.order.pk})
 
@@ -2756,6 +3381,12 @@ class MechanicJobAssignmentTests(TestCase):
     def test_invoice_issuance_is_audited(self, send_invoice_email):
         self.order.approved = True
         self.order.save(update_fields=['approved'])
+        RepairEstimate.objects.create(
+            repair_order=self.order,
+            version=1,
+            total_amount=Decimal('500.00'),
+            status='approved',
+        )
         self.client.force_login(self.non_mechanic)
 
         response = self.client.post(
@@ -3333,5 +3964,5 @@ class NavigationGuidanceTests(TestCase):
 
         response = self.client.get(reverse('vehicle_detail', args=[vehicle.pk]))
 
-        self.assertContains(response, 'Request service')
+        self.assertContains(response, 'Book new service')
         self.assertNotContains(response, 'Create repair order')

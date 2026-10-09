@@ -8,17 +8,27 @@
 {% block content %}
 <div style="max-width:760px;">
   <div class="card">
+    {% if selected_vehicle %}
+    <div class="alert alert-info" style="margin-bottom:20px;">
+      Service for <strong>{{ selected_vehicle.year }} {{ selected_vehicle.make }} {{ selected_vehicle.model }}</strong>
+      {% if selected_vehicle.license_plate %}({{ selected_vehicle.license_plate }}){% endif %}.
+      Vehicle identity and history stay with this car; this booking starts a new service record.
+    </div>
+    {% endif %}
     <form method="post">
       {% csrf_token %}
       {% if form.non_field_errors %}
         <div class="alert alert-error" role="alert">{{ form.non_field_errors }}</div>
+      {% endif %}
+      {% if request.user.userprofile.role == 'customer' %}
+      <h2 style="font-size:17px; margin-bottom:14px;">Vehicle and booking details</h2>
       {% endif %}
       <div class="form-grid">
         {% for field in form %}
           {% if field.is_hidden %}
             {{ field }}
           {% else %}
-            <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' %}full{% endif %}">
+            <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' or field.html_name == 'requested_services' or field.html_name == 'vehicle_recent_service_history' or field.html_name == 'vehicle_notes' %}full{% endif %}">
               <label for="{{ field.id_for_label }}">{{ field.label }}</label>
               {{ field }}
               {% if field.errors %}
@@ -37,4 +47,75 @@
     </form>
   </div>
 </div>
+{% if request.user.userprofile.role == 'customer' %}
+<script>
+  (() => {
+    const plateField = document.getElementById('id_vehicle_license_plate');
+    const vehicleField = document.getElementById('id_vehicle');
+    if (!plateField || !vehicleField) return;
+
+    const feedback = document.createElement('div');
+    feedback.id = 'vehicle-lookup-feedback';
+    feedback.className = 'alert alert-info';
+    feedback.setAttribute('role', 'status');
+    feedback.hidden = true;
+    plateField.closest('.form-group').append(feedback);
+
+    const identityFields = [
+      'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_vin',
+      'vehicle_color',
+      'vehicle_recent_service_history', 'vehicle_notes',
+    ].map((name) => document.getElementById(`id_${name}`)).filter(Boolean);
+    const mileageField = document.getElementById('id_vehicle_mileage');
+    let lookupTimer;
+    let lookupSequence = 0;
+    let matchedVehicle = Boolean(vehicleField.value);
+
+    function setMatchedVehicle(vehicle) {
+      vehicleField.value = vehicle?.id || '';
+      matchedVehicle = Boolean(vehicle);
+      identityFields.forEach((field) => {
+        field.disabled = Boolean(vehicle);
+        if (vehicle) {
+          const key = field.id.replace('id_vehicle_', '');
+          field.value = vehicle[key] ?? '';
+        }
+      });
+      if (vehicle && mileageField) mileageField.value = vehicle.mileage || '';
+      feedback.hidden = false;
+      feedback.textContent = vehicle
+        ? `Saved vehicle found: ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.license_plate}). Existing vehicle details will be kept; enter the new service description and appointment notes below.`
+        : 'No saved vehicle matches this plate. Enter the vehicle make, model, and year to register it.';
+    }
+
+    plateField.addEventListener('input', () => {
+      clearTimeout(lookupTimer);
+      lookupSequence += 1;
+      const sequence = lookupSequence;
+      vehicleField.value = '';
+      if (matchedVehicle) identityFields.forEach((field) => { field.value = ''; });
+      if (matchedVehicle && mileageField) mileageField.value = '';
+      matchedVehicle = false;
+      identityFields.forEach((field) => { field.disabled = false; });
+      const plate = plateField.value.trim();
+      if (!plate) {
+        feedback.hidden = true;
+        return;
+      }
+      lookupTimer = setTimeout(async () => {
+        try {
+          const url = new URL('{% url "vehicle_lookup" %}', window.location.origin);
+          url.searchParams.set('plate', plate);
+          const response = await fetch(url, { headers: { Accept: 'application/json' } });
+          if (!response.ok || sequence !== lookupSequence) return;
+          const result = await response.json();
+          setMatchedVehicle(result.found ? result.vehicle : null);
+        } catch {
+          feedback.hidden = true;
+        }
+      }, 250);
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

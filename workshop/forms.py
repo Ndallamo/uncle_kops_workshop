@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 from PIL import Image, UnidentifiedImageError
 from .currency import format_rand
-from .models import Customer, Vehicle, RepairOrder, RepairDocument, RepairEstimateLine, LaborLine, PartsLine, Invoice, Appointment, Part, ServiceItem
+from .models import Customer, Vehicle, RepairOrder, RepairDocument, RepairEstimateLine, LaborLine, PartsLine, Invoice, Appointment, Part, ServiceItem, normalize_license_plate
 
 
 class CustomerForm(forms.ModelForm):
@@ -77,11 +77,29 @@ class VehicleForm(forms.ModelForm):
                     self.fields['customer'].initial = customer.pk
                     self.fields['customer'].help_text = 'This vehicle will be saved to your customer account.'
 
+    def clean_license_plate(self):
+        license_plate = ' '.join((self.cleaned_data.get('license_plate') or '').upper().split())
+        normalized_plate = normalize_license_plate(license_plate)
+        if normalized_plate:
+            existing_plates = Vehicle.objects.exclude(license_plate='').exclude(pk=self.instance.pk)
+            if any(
+                normalize_license_plate(existing_plate) == normalized_plate
+                for existing_plate in existing_plates.values_list('license_plate', flat=True)
+            ):
+                raise forms.ValidationError('This license plate is already linked to a vehicle. Search for that vehicle instead of adding it again.')
+        return license_plate
+
 
 class RepairOrderForm(forms.ModelForm):
+    assignment_reason = forms.CharField(
+        required=False,
+        label='Reason for mechanic change',
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': 'Explain why this mechanic is being assigned or changed.'}),
+    )
+
     class Meta:
         model  = RepairOrder
-        fields = ['vehicle', 'assigned_tech', 'status', 'description', 'internal_notes', 'mileage_in', 'approved']
+        fields = ['vehicle', 'assigned_tech', 'status', 'assignment_reason', 'description', 'internal_notes', 'mileage_in', 'approved']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Describe the customer complaint and work requested'}),
             'internal_notes': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Optional notes for workshop staff; not customer-facing'}),
@@ -104,6 +122,9 @@ class RepairOrderForm(forms.ModelForm):
         self.fields['assigned_tech'].queryset = User.objects.filter(
             userprofile__role='mechanic'
         ).order_by('first_name', 'last_name', 'username')
+        if not self.instance.pk or not self.instance.approved:
+            self.fields['assigned_tech'].disabled = True
+            self.fields['assigned_tech'].help_text = 'A mechanic can be assigned after the customer approves the repair estimate.'
 
 
 class LaborLineForm(forms.ModelForm):
@@ -199,6 +220,12 @@ class PartsLineForm(forms.ModelForm):
 
 
 class InvoiceForm(forms.ModelForm):
+    tax_rate = forms.DecimalField(
+        initial=Decimal('15.00'),
+        disabled=True,
+        required=False,
+        label='VAT (fixed at 15%)',
+    )
     repair_order = forms.ModelChoiceField(
         queryset=RepairOrder.objects.all(),
         empty_label='Choose repair/vehicle',
@@ -207,13 +234,14 @@ class InvoiceForm(forms.ModelForm):
     service_amount = forms.DecimalField(
         max_digits=10,
         decimal_places=2,
+        min_value=Decimal('0.01'),
         required=False,
         disabled=True,
         label='Service amount (R)',
     )
     class Meta:
         model  = Invoice
-        fields = ['repair_order', 'service_amount', 'issue_date', 'due_date', 'discount', 'tax_rate', 'notes']
+        fields = ['repair_order', 'service_amount', 'issue_date', 'due_date', 'discount', 'notes']
         widgets = {
             'issue_date': forms.DateInput(attrs={'type': 'date'}),
             'due_date':   forms.DateInput(attrs={'type': 'date'}),
@@ -221,7 +249,6 @@ class InvoiceForm(forms.ModelForm):
         }
         help_texts = {
             'discount': 'Enter a discount amount in currency; use 0 if there is no discount.',
-            'tax_rate': 'Enter the tax percentage (for example, 15 for 15%); use 0 if not applicable.',
             'notes': 'Optional information to include with this invoice.',
         }
 
@@ -236,16 +263,15 @@ class InvoiceForm(forms.ModelForm):
         self.fields['repair_order'].queryset = available_orders
         self.fields['service_amount'].label = 'Service amount (R)'
         self.fields['discount'].label = 'Discount (R)'
+        self.fields['tax_rate'].initial = Decimal('15.00')
         if self.instance.pk:
             self.fields['repair_order'].disabled = True
         if not self.instance.pk and self.initial.get('repair_order'):
             repair_order = self.initial['repair_order']
-            if hasattr(repair_order, 'grand_total'):
-                self.fields['service_amount'].initial = repair_order.grand_total
+            if hasattr(repair_order, 'invoice_amount'):
+                self.fields['service_amount'].initial = repair_order.invoice_amount
         self.fields['discount'].min_value = 0
-        self.fields['tax_rate'].min_value = 0
         self.fields['discount'].validators.append(MinValueValidator(Decimal('0.00')))
-        self.fields['tax_rate'].validators.append(MinValueValidator(Decimal('0.00')))
         self.fields['repair_order'].help_text = 'Select the repair order this invoice is for.'
         self.fields['service_amount'].help_text = 'Calculated from the labor and parts on this repair order.'
         self.fields['issue_date'].help_text = 'Choose the date the invoice is issued.'
@@ -261,7 +287,10 @@ class InvoiceForm(forms.ModelForm):
         cleaned_data = super().clean()
         repair_order = cleaned_data.get('repair_order')
         if repair_order:
-            cleaned_data['service_amount'] = repair_order.grand_total
+            service_amount = self.instance.service_amount if self.instance.pk else repair_order.invoice_amount
+            cleaned_data['service_amount'] = service_amount
+            if service_amount <= 0:
+                self.add_error('repair_order', 'The invoice amount must be greater than R 0.00. Add a priced, customer-approved estimate before invoicing.')
         discount = cleaned_data.get('discount')
         service_amount = cleaned_data.get('service_amount')
         if discount is not None and service_amount is not None and discount > service_amount:
@@ -277,13 +306,6 @@ class InvoiceForm(forms.ModelForm):
         if value is not None and value < 0:
             raise forms.ValidationError('Discount cannot be negative.')
         return value
-
-    def clean_tax_rate(self):
-        value = self.cleaned_data.get('tax_rate')
-        if value is not None and value < 0:
-            raise forms.ValidationError('Tax rate cannot be negative.')
-        return value
-
 
 class InvoicePaymentForm(forms.Form):
     amount = forms.DecimalField(
@@ -312,6 +334,13 @@ class InvoicePaymentForm(forms.Form):
 
 
 class AppointmentForm(forms.ModelForm):
+    requested_services = forms.ModelMultipleChoiceField(
+        queryset=ServiceItem.objects.all().order_by('name', 'pk'),
+        required=False,
+        label='Select services',
+        help_text='Choose one or more services, or describe another issue below.',
+        widget=forms.CheckboxSelectMultiple,
+    )
     vehicle_text = forms.CharField(
         label='Vehicle details',
         required=False,
@@ -324,7 +353,7 @@ class AppointmentForm(forms.ModelForm):
     vehicle_vin = forms.CharField(max_length=17, required=False, label='VIN', help_text='Optional; enter the 17-character vehicle identification number.')
     vehicle_license_plate = forms.CharField(max_length=20, required=False, label='License plate', help_text='Optional; enter the vehicle registration number.')
     vehicle_color = forms.CharField(max_length=30, required=False, label='Color', help_text='Optional; enter the vehicle color.')
-    vehicle_mileage = forms.IntegerField(required=False, label='Mileage', min_value=0, help_text='Enter the current odometer reading in kilometers.')
+    vehicle_mileage = forms.IntegerField(required=False, label='Mileage', min_value=1, help_text='Enter the current odometer reading in kilometers.')
     vehicle_service_plan = forms.CharField(max_length=200, required=False, label='Service plan', help_text='Optional; enter the customer\'s maintenance plan.')
     vehicle_recent_service_history = forms.CharField(
         required=False,
@@ -352,6 +381,11 @@ class AppointmentForm(forms.ModelForm):
         initial='pending',
         help_text='Staff only; choose the current assignment state.'
     )
+    assignment_reason = forms.CharField(
+        required=False,
+        label='Reason for mechanic change',
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': 'Explain why the mechanic is being assigned or changed.'}),
+    )
 
     class Meta:
         model  = Appointment
@@ -360,7 +394,7 @@ class AppointmentForm(forms.ModelForm):
             'customer', 'vehicle', 'vehicle_text',
             'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_vin', 'vehicle_license_plate',
             'vehicle_color', 'vehicle_mileage', 'vehicle_service_plan', 'vehicle_recent_service_history',
-            'vehicle_notes', 'date_time', 'service_desc', 'assigned_mechanic', 'assignment_status', 'notes'
+            'vehicle_notes', 'date_time', 'requested_services', 'service_desc', 'assigned_mechanic', 'assignment_status', 'assignment_reason', 'notes'
         ]
         widgets = {
             'date_time':                    forms.DateTimeInput(attrs={'type': 'datetime-local'}),
@@ -378,6 +412,7 @@ class AppointmentForm(forms.ModelForm):
         }
 
     def __init__(self, *args, user=None, **kwargs):
+        self.user = user
         super().__init__(*args, **kwargs)
         self.fields['customer'].empty_label = 'Choose customer'
         self.fields['vehicle'].empty_label = 'Choose vehicle'
@@ -389,10 +424,16 @@ class AppointmentForm(forms.ModelForm):
         self.fields['vehicle_vin'].widget.attrs['placeholder'] = '17-character VIN, if available'
         self.fields['vehicle_license_plate'].widget.attrs['placeholder'] = 'e.g. ABC 123 GP'
         self.fields['vehicle_color'].widget.attrs['placeholder'] = 'e.g. Silver'
-        self.fields['vehicle_mileage'].widget.attrs['placeholder'] = 'Current odometer reading'
+        self.fields['vehicle_mileage'].label = 'Current mileage (km)'
+        self.fields['vehicle_mileage'].help_text = 'Enter the current odometer reading. It updates the saved vehicle record.'
+        self.fields['vehicle_mileage'].widget.attrs.update({'placeholder': 'e.g. 68000', 'min': '1'})
         self.fields['vehicle_service_plan'].widget.attrs['placeholder'] = 'e.g. Basic maintenance plan'
         self.fields['vehicle_recent_service_history'].widget.attrs['placeholder'] = 'Recent work, dates and mileage'
         self.fields['vehicle_notes'].widget.attrs['placeholder'] = 'Optional vehicle notes'
+        self.fields['service_desc'].required = False
+        self.fields['service_desc'].label = 'Service description'
+        self.fields['service_desc'].widget.attrs['placeholder'] = 'e.g. Wheel alignment; car pulls slightly to the left'
+        self.fields['requested_services'].label_from_instance = lambda service: service.name
         if user is not None:
             profile = getattr(user, 'userprofile', None)
             if profile and profile.role == 'customer':
@@ -413,6 +454,33 @@ class AppointmentForm(forms.ModelForm):
                 self.fields['assigned_mechanic'].required = False
                 self.fields['assignment_status'].widget = forms.HiddenInput()
                 self.fields['assignment_status'].required = False
+                self.fields['assignment_reason'].widget = forms.HiddenInput()
+                self.fields.pop('requested_services')
+                self.fields['service_desc'].required = True
+                self.fields['service_desc'].label = 'Service description'
+                self.fields['service_desc'].help_text = 'Describe the service or repair needed for this visit.'
+                selected_vehicle_id = self.initial.get('vehicle')
+                selected_vehicle = Vehicle.objects.filter(
+                    pk=selected_vehicle_id,
+                    customer=customer,
+                ).first() if customer and selected_vehicle_id else None
+                if selected_vehicle:
+                    self.fields['vehicle_make'].initial = selected_vehicle.make
+                    self.fields['vehicle_model'].initial = selected_vehicle.model
+                    self.fields['vehicle_year'].initial = selected_vehicle.year
+                    self.fields['vehicle_vin'].initial = selected_vehicle.vin
+                    self.fields['vehicle_license_plate'].initial = selected_vehicle.license_plate
+                    self.fields['vehicle_color'].initial = selected_vehicle.color
+                    self.fields['vehicle_mileage'].initial = selected_vehicle.mileage or None
+                    self.fields['vehicle_service_plan'].initial = selected_vehicle.service_plan
+                    self.fields['vehicle_recent_service_history'].initial = selected_vehicle.recent_service_history
+                    self.fields['vehicle_notes'].initial = selected_vehicle.notes
+                    for field_name in [
+                        'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_vin',
+                        'vehicle_license_plate', 'vehicle_color',
+                        'vehicle_recent_service_history', 'vehicle_notes',
+                    ]:
+                        self.fields[field_name].disabled = True
             else:
                 for field_name in [
                     'vehicle_text', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_vin',
@@ -421,8 +489,22 @@ class AppointmentForm(forms.ModelForm):
                 ]:
                     self.fields[field_name].widget = forms.HiddenInput()
                     self.fields[field_name].required = False
+                if profile and profile.role == 'admin' and (
+                    not self.instance.pk
+                    or not self.instance.repair_order_id
+                    or not self.instance.repair_order.approved
+                ):
+                    for field_name in ['assigned_mechanic', 'assignment_status']:
+                        self.fields[field_name].widget = forms.HiddenInput()
+                        self.fields[field_name].required = False
                 if profile and profile.role == 'mechanic' and self.instance.pk:
-                    for field_name in ['customer', 'vehicle', 'date_time', 'service_desc', 'assigned_mechanic']:
+                    for field_name in ['customer', 'vehicle', 'date_time', 'service_desc', 'assigned_mechanic', 'assignment_reason']:
+                        self.fields[field_name].disabled = True
+                if ((profile and profile.role == 'admin') or user.is_staff) and self.instance.pk:
+                    self.fields['customer'].disabled = True
+                    self.fields['vehicle'].disabled = True
+                if profile and profile.role == 'admin' and self.instance.pk:
+                    for field_name in ['customer', 'vehicle']:
                         self.fields[field_name].disabled = True
 
     def manual_vehicle_data(self):
@@ -452,6 +534,12 @@ class AppointmentForm(forms.ModelForm):
             self.add_error('vehicle', 'The selected vehicle does not belong to the selected customer.')
         if not vehicle and not has_manual_vehicle:
             raise forms.ValidationError('Please provide vehicle details for the appointment.')
+        profile = getattr(self.user, 'userprofile', None)
+        customer_booking = profile and profile.role == 'customer'
+        if customer_booking and not (cleaned_data.get('service_desc') or '').strip():
+            self.add_error('service_desc', 'Enter a service description or explain the issue you would like checked.')
+        elif not customer_booking and not cleaned_data.get('requested_services') and not (cleaned_data.get('service_desc') or '').strip():
+            self.add_error('service_desc', 'Enter a service description or explain the issue you would like checked.')
         if assignment_status == 'accepted' and Appointment.has_schedule_conflict(
             mechanic=assigned_mechanic,
             date_time=date_time,
@@ -555,39 +643,75 @@ class RepairDocumentForm(forms.ModelForm):
         return uploaded_file
 
 
-class RepairEstimateLineForm(forms.ModelForm):
-    class Meta:
-        model = RepairEstimateLine
-        fields = ['line_type', 'service_item', 'part', 'quantity', 'unit_price', 'notes']
-        widgets = {
-            'quantity': forms.NumberInput(attrs={'step': '0.01', 'min': '0.01'}),
-            'unit_price': forms.NumberInput(attrs={'readonly': 'readonly'}),
-            'notes': forms.Textarea(attrs={'rows': 3}),
-        }
+class EstimateLaborForm(forms.Form):
+    service_item = forms.ModelChoiceField(
+        queryset=ServiceItem.objects.all().order_by('name', 'pk'),
+        empty_label='Choose service item',
+        label='Service item',
+    )
+    hours = forms.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        min_value=Decimal('0.01'),
+        initial=Decimal('1.00'),
+        label='Hours',
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['unit_price'].required = False
-        self.fields['unit_price'].label = 'Unit price (R)'
+        self.fields['service_item'].label_from_instance = lambda item: (
+            f'{item.name} ({format_rand(item.labor_rate)}/hour)'
+        )
+        self.fields['service_item'].widget.attrs.update({
+            'class': 'estimate-catalog-select',
+            'aria-label': 'Choose service item',
+        })
+        self.fields['hours'].widget.attrs.update({
+            'class': 'estimate-quantity',
+            'step': '0.01',
+            'min': '0.01',
+            'aria-label': 'Labor hours',
+        })
 
-    def clean(self):
-        cleaned_data = super().clean()
-        line_type = cleaned_data.get('line_type')
-        service_item = cleaned_data.get('service_item')
-        part = cleaned_data.get('part')
-        if line_type == 'labor':
-            if not service_item:
-                self.add_error('service_item', 'Choose a service for labor estimates.')
-            if part:
-                self.add_error('part', 'Labor estimates cannot include a part.')
-            cleaned_data['unit_price'] = service_item.labor_rate if service_item else cleaned_data.get('unit_price')
-        elif line_type == 'part':
-            if not part:
-                self.add_error('part', 'Choose a part for parts estimates.')
-            if service_item:
-                self.add_error('service_item', 'Parts estimates cannot include a labor service.')
-            cleaned_data['unit_price'] = part.sell_price if part else cleaned_data.get('unit_price')
-        return cleaned_data
+
+class EstimatePartForm(forms.Form):
+    part = forms.ModelChoiceField(
+        queryset=Part.objects.all().order_by('name', 'part_number', 'pk'),
+        empty_label='Choose part',
+        label='Part',
+    )
+    quantity = forms.IntegerField(
+        min_value=1,
+        initial=1,
+        label='Quantity',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['part'].label_from_instance = lambda part: (
+            f'{part.name} ({format_rand(part.sell_price)} each)'
+        )
+        self.fields['part'].widget.attrs.update({
+            'class': 'estimate-catalog-select',
+            'aria-label': 'Choose part',
+        })
+        self.fields['quantity'].widget.attrs.update({
+            'class': 'estimate-quantity',
+            'min': '1',
+            'step': '1',
+            'aria-label': 'Part quantity',
+        })
+
+
+class EstimateNotesForm(forms.Form):
+    notes = forms.CharField(
+        required=False,
+        label='Notes for estimate items',
+        widget=forms.Textarea(attrs={
+            'rows': 3,
+            'placeholder': 'Optional notes applied to each item added in this submission.',
+        }),
+    )
 
 
 class EmployeeForm(UserCreationForm):

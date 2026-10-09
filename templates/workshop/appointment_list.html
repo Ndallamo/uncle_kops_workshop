@@ -20,7 +20,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Date & Time</th><th>Customer</th><th>Vehicle</th><th>Duration</th><th>Assigned Mechanic</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Date & Time</th><th>Customer</th><th>Vehicle</th><th>Service request</th><th>Duration</th><th>Assigned Mechanic</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for a in appointments %}
@@ -28,9 +28,13 @@
           <td class="fw-600">{{ a.date_time|date:"d M Y, H:i" }}</td>
           <td><a href="{% url 'customer_detail' a.customer.pk %}" class="text-orange">{{ a.customer.full_name }}</a></td>
           <td>{{ a.vehicle.year }} {{ a.vehicle.make }} {{ a.vehicle.model }}{% if a.vehicle.license_plate %}<div class="text-muted" style="font-size:11px;">{{ a.vehicle.license_plate }}</div>{% endif %}</td>
+          <td>{{ a.service_desc|linebreaksbr }}{% if a.notes %}<div class="text-muted" style="font-size:12px; margin-top:4px;">{{ a.notes }}</div>{% endif %}</td>
           <td>{{ a.duration }} min</td>
           <td>{% if a.assigned_mechanic %}{{ a.assigned_mechanic.get_full_name|default:a.assigned_mechanic.username }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
-          <td>{{ a.get_assignment_status_display }}</td>
+          <td>
+            {{ a.get_assignment_status_display }}
+            {% if a.assignment_reason %}<div class="text-muted" style="font-size:12px; margin-top:4px;">Feedback: {{ a.assignment_reason }}</div>{% endif %}
+          </td>
           <td>
             <a href="{% url 'appointment_edit' a.pk %}" class="btn btn-secondary btn-sm">Edit</a>
             {% if request.user.userprofile.role == 'customer' %}
@@ -50,13 +54,14 @@
               </form>
               <form method="post" action="{% url 'appointment_decision' a.pk 'decline' %}" style="display:inline">
                 {% csrf_token %}
+                <label>Reason<textarea name="reason" rows="2" required placeholder="Why can't you accept this service?"></textarea></label>
                 <button type="submit" class="btn btn-danger btn-sm">Decline</button>
               </form>
             {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7"><div class="empty-state">
+        <tr><td colspan="8"><div class="empty-state">
           {% if request.user.userprofile.role == 'customer' %}
           <strong>No appointments booked</strong><span>Book a workshop visit to get started.</span><a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">Book an appointment</a>
           {% elif request.user.userprofile.role == 'mechanic' %}

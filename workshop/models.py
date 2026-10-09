@@ -5,9 +5,16 @@ from django.conf import settings
 from decimal import Decimal, ROUND_HALF_UP
 import base64
 import os
+import re
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import hashlib
 import secrets
+
+VAT_RATE = Decimal('15.00')
+
+
+def normalize_license_plate(value):
+    return re.sub(r'[^A-Z0-9]', '', (value or '').upper())
 
 
 # EncryptedTextField: AES-256-GCM at-rest encryption for sensitive fields
@@ -109,7 +116,7 @@ class EmailVerificationToken(models.Model):
     used = models.BooleanField(default=False)
 
     @classmethod
-    def generate_for_user(cls, user, ttl_minutes=30):
+    def generate_for_user(cls, user, ttl_minutes=15):
         raw = secrets.token_urlsafe(32)
         h = hashlib.sha256(raw.encode('utf-8')).hexdigest()
         expires = timezone.now() + timezone.timedelta(minutes=ttl_minutes)
@@ -139,7 +146,7 @@ class PasswordResetToken(models.Model):
     used = models.BooleanField(default=False)
 
     @classmethod
-    def generate_for_user(cls, user, ttl_minutes=30):
+    def generate_for_user(cls, user, ttl_minutes=15):
         cls.objects.filter(user=user, used=False).update(used=True)
         raw = secrets.token_urlsafe(32)
         h = hashlib.sha256(raw.encode('utf-8')).hexdigest()
@@ -296,6 +303,13 @@ class RepairOrder(models.Model):
     def grand_total(self):
         return self.total_labor + self.total_parts
 
+    @property
+    def invoice_amount(self):
+        approved_estimate = self.estimates.filter(status='approved').order_by('-version').first()
+        if approved_estimate:
+            return approved_estimate.total_amount
+        return self.grand_total
+
 
 class RepairEstimate(models.Model):
     STATUS_CHOICES = [
@@ -362,6 +376,7 @@ class RepairOrderEvent(models.Model):
         ('assignment', 'Mechanic assignment changed'),
         ('status_proposed', 'Status proposed'),
         ('status_changed', 'Status changed'),
+        ('status_rejected', 'Status update rejected'),
         ('approval', 'Customer approval recorded'),
         ('payment', 'Payment recorded'),
         ('work_logged', 'Repair work logged'),
@@ -531,7 +546,7 @@ class Invoice(models.Model):
     payment_status  = models.CharField(max_length=10, choices=PAYMENT_CHOICES, default='unpaid')
     payment_method  = models.CharField(max_length=10, choices=METHOD_CHOICES, blank=True)
     discount        = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    tax_rate        = models.DecimalField(max_digits=5, decimal_places=2, default=15)  # % VAT
+    tax_rate        = models.DecimalField(max_digits=5, decimal_places=2, default=VAT_RATE, editable=False)
     notes           = models.TextField(blank=True)
 
     class Meta:
@@ -539,12 +554,16 @@ class Invoice(models.Model):
             models.CheckConstraint(check=models.Q(service_amount__gte=0), name='invoice_service_amount_nonnegative'),
             models.CheckConstraint(check=models.Q(discount__gte=0), name='invoice_discount_nonnegative'),
             models.CheckConstraint(check=models.Q(discount__lte=models.F('service_amount')), name='invoice_discount_within_service_amount'),
-            models.CheckConstraint(check=models.Q(tax_rate__gte=0), name='invoice_tax_rate_nonnegative'),
+            models.CheckConstraint(check=models.Q(tax_rate=VAT_RATE), name='invoice_vat_fixed_at_15'),
             models.CheckConstraint(check=models.Q(due_date__gte=models.F('issue_date')), name='invoice_due_date_not_before_issue'),
         ]
 
     def __str__(self):
         return f"INV#{self.pk} – {self.repair_order}"
+
+    def save(self, *args, **kwargs):
+        self.tax_rate = VAT_RATE
+        super().save(*args, **kwargs)
 
     @property
     def subtotal(self):
@@ -552,8 +571,7 @@ class Invoice(models.Model):
 
     @property
     def tax_amount(self):
-        tax_rate = max(Decimal(str(self.tax_rate)), Decimal('0.00'))
-        return (self.subtotal * (tax_rate / Decimal('100'))).quantize(
+        return (self.subtotal * (VAT_RATE / Decimal('100'))).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         )
 
@@ -632,6 +650,7 @@ class Appointment(models.Model):
     confirmed   = models.BooleanField(default=False)
     assigned_mechanic = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_appointments')
     assignment_status = models.CharField(max_length=20, choices=ASSIGNMENT_CHOICES, default='pending')
+    assignment_reason = models.TextField(blank=True)
     notes       = models.TextField(blank=True)
 
     class Meta:
