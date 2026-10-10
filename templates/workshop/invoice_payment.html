@@ -10,22 +10,13 @@
     <p>Outstanding balance: <strong>{{ invoice.balance_due|zar }}</strong></p>
     <p>Repair order: <a href="{% url 'repair_order_detail' invoice.repair_order.pk %}">#{{ invoice.repair_order.pk }}</a></p>
     <p>Customer: {{ invoice.repair_order.vehicle.customer.full_name }}</p>
-    {% if is_customer %}<p class="text-muted">Choose the method you used to pay. Submitting records the full outstanding balance as paid; this page does not process a transaction.</p>{% endif %}
   </div>
 
-  <form method="post" style="display:flex; flex-direction:column; gap:16px;">
-    {% csrf_token %}
-    {% if is_customer %}
-      <div class="form-group">
-        <label for="payment-method">Payment method</label>
-        <select id="payment-method" name="payment_method" required>
-          <option value="">Choose method</option>
-          {% for value, label in payment_methods %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select>
-        {% if payment_error %}<span style="color:var(--red); font-size:12px;">{{ payment_error }}</span>{% endif %}
-      </div>
-      <button type="submit" class="btn btn-primary">Submit payment</button>
-    {% else %}
+  {% if is_customer %}
+    <p class="text-muted">Online payment processing is not configured. Contact the workshop to arrange payment. Your invoice will remain unpaid until the workshop records a verified receipt.</p>
+  {% else %}
+    <form method="post" style="display:flex; flex-direction:column; gap:16px;">
+      {% csrf_token %}
       {% for field in form %}
         <div class="form-group">
           <label for="{{ field.id_for_label }}">{{ field.label }}</label>
@@ -34,8 +25,8 @@
         </div>
       {% endfor %}
       <button type="submit" class="btn btn-primary">Record verified receipt</button>
-    {% endif %}
-    <a href="{% url 'invoice_detail' invoice.pk %}" class="btn btn-secondary">Back to Invoice</a>
-  </form>
+    </form>
+  {% endif %}
+  <a href="{% url 'invoice_detail' invoice.pk %}" class="btn btn-secondary">Back to Invoice</a>
 </div>
 {% endblock %}

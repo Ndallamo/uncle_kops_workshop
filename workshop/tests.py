@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 from unittest.mock import patch
 
@@ -695,6 +695,8 @@ class ReportPageTests(TestCase):
         self.assertContains(response, 'Performance Overview')
 
     def test_date_filtered_report_uses_real_payments_and_operational_records(self):
+        report_date = timezone.localdate()
+        report_datetime = timezone.make_aware(datetime.combine(report_date, time(hour=12)))
         admin = User.objects.create_user(username='reportdata', password='Password123!', is_staff=True)
         UserProfile.objects.create(user=admin, role='admin', is_verified=True)
         customer = Customer.objects.create(first_name='Report', last_name='Customer', email='report-data@example.com')
@@ -704,6 +706,7 @@ class ReportPageTests(TestCase):
         order = RepairOrder.objects.create(vehicle=vehicle, assigned_tech=mechanic, description='Period report repair')
         invoice = Invoice.objects.create(
             repair_order=order,
+            issue_date=report_date,
             due_date=timezone.localdate() + timedelta(days=1),
             service_amount=Decimal('100.00'),
             tax_rate=Decimal('15.00'),
@@ -712,7 +715,7 @@ class ReportPageTests(TestCase):
             invoice=invoice,
             amount=Decimal('25.00'),
             payment_method='cash',
-            received_at=timezone.now().replace(hour=12, minute=0, second=0, microsecond=0),
+            received_at=report_datetime,
         )
         invoice.refresh_payment_status()
         part = Part.objects.create(name='Report part', part_number='RP-1', cost_price=10, sell_price=20, stock_qty=1, reorder_level=3)
@@ -722,7 +725,7 @@ class ReportPageTests(TestCase):
         Appointment.objects.create(
             customer=customer,
             vehicle=vehicle,
-            date_time=timezone.now(),
+            date_time=report_datetime,
             service_desc='Report appointment',
         )
 
@@ -962,6 +965,39 @@ class WorkflowAdminGuardTests(TestCase):
             self.client.get(reverse('admin:workshop_appointment_add')).status_code,
             403,
         )
+
+    def test_invoice_and_catalogue_admin_forms_cannot_change_business_values(self):
+        invoice = Invoice.objects.create(
+            repair_order=self.order,
+            due_date=timezone.localdate() + timedelta(days=1),
+        )
+        part = Part.objects.create(
+            name='Admin-read-only part',
+            cost_price=Decimal('10.00'),
+            sell_price=Decimal('15.00'),
+            stock_qty=5,
+        )
+
+        invoice_response = self.client.get(
+            reverse('admin:workshop_invoice_change', args=[invoice.pk])
+        )
+        part_response = self.client.get(
+            reverse('admin:workshop_part_change', args=[part.pk])
+        )
+
+        self.assertEqual(invoice_response.status_code, 200)
+        self.assertNotContains(invoice_response, 'name="service_amount"')
+        self.assertEqual(part_response.status_code, 200)
+        self.assertNotContains(part_response, 'name="stock_qty"')
+        self.assertEqual(
+            self.client.get(reverse('admin:workshop_invoice_add')).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.get(reverse('admin:workshop_part_add')).status_code,
+            403,
+        )
+
 
 class AppointmentDeleteTests(TestCase):
     def setUp(self):
@@ -1385,27 +1421,80 @@ class CustomerRepairOrderSummaryTests(TestCase):
         self.assertNotContains(response, 'supplier dispute')
         self.assertNotContains(response, 'staff-only details')
 
-    def test_customer_can_submit_payment_method_for_own_invoice(self):
+    def test_customer_cannot_record_payment_without_online_processing(self):
         payment_url = reverse('invoice_pay', args=[self.invoice.pk])
         invoice_page = self.client.get(reverse('invoice_detail', args=[self.invoice.pk]))
         page = self.client.get(payment_url)
 
         self.assertContains(invoice_page, 'Pay invoice')
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'Choose method')
-        self.assertContains(page, 'does not process a transaction')
+        self.assertContains(page, 'Online payment processing is not configured')
+        self.assertNotContains(page, 'Submit payment')
 
         response = self.client.post(payment_url, {'payment_method': 'card'})
 
         self.assertRedirects(response, reverse('invoice_detail', args=[self.invoice.pk]))
         self.invoice.refresh_from_db()
-        self.assertEqual(self.invoice.payment_status, 'paid')
-        self.assertEqual(self.invoice.payment_method, 'card')
-        self.assertEqual(self.invoice.paid_amount, Decimal('115.00'))
+        self.assertEqual(self.invoice.payment_status, 'unpaid')
+        self.assertEqual(self.invoice.paid_amount, Decimal('0.00'))
+        self.assertEqual(self.invoice.balance_due, Decimal('115.00'))
+        self.assertFalse(InvoicePayment.objects.filter(invoice=self.invoice).exists())
+
+    def test_user_without_role_cannot_edit_repair_order(self):
+        unassigned_user = User.objects.create_user(
+            username='unassigned-user',
+            password='test-password',
+        )
+        self.client.force_login(unassigned_user)
+
+        response = self.client.get(reverse('repair_order_edit', args=[self.order.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('dashboard'))
+
+    def test_console_style_overpayment_is_flagged_and_rejected_by_payment_views(self):
+        InvoicePayment.objects.create(
+            invoice=self.invoice,
+            amount=Decimal('130.00'),
+            payment_method='cash',
+        )
+        Invoice.objects.filter(pk=self.invoice.pk).update(payment_status='unpaid')
+
+        detail = self.client.get(reverse('invoice_detail', args=[self.invoice.pk]))
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.context['invoice'].overpayment_amount, Decimal('15.00'))
+        self.assertContains(detail, 'Recorded payments exceed the invoice total by R 15.00')
+        self.assertEqual(self.invoice.paid_amount, Decimal('130.00'))
+        self.assertEqual(self.invoice.total_due, Decimal('115.00'))
         self.assertEqual(self.invoice.balance_due, Decimal('0.00'))
-        payment = InvoicePayment.objects.get(invoice=self.invoice)
-        self.assertEqual(payment.amount, Decimal('115.00'))
-        self.assertEqual(payment.recorded_by, self.user)
+
+        customer_response = self.client.post(
+            reverse('invoice_pay', args=[self.invoice.pk]),
+            {'payment_method': 'eft'},
+            follow=True,
+        )
+        self.assertRedirects(customer_response, reverse('invoice_detail', args=[self.invoice.pk]))
+        self.assertContains(customer_response, 'Reconcile the recorded payments before accepting another payment')
+        self.assertEqual(InvoicePayment.objects.filter(invoice=self.invoice).count(), 1)
+
+        admin = User.objects.create_user(username='overpayment-admin', password='test-password')
+        UserProfile.objects.create(user=admin, role='admin')
+        self.client.force_login(admin)
+        admin_response = self.client.post(
+            reverse('invoice_pay', args=[self.invoice.pk]),
+            {
+                'amount': '0.01',
+                'payment_method': 'cash',
+                'reference': 'must-be-rejected',
+                'notes': '',
+            },
+            follow=True,
+        )
+
+        self.assertRedirects(admin_response, reverse('invoice_detail', args=[self.invoice.pk]))
+        self.assertContains(admin_response, 'Recorded payments exceed the invoice total by R 15.00')
+        self.assertEqual(InvoicePayment.objects.filter(invoice=self.invoice).count(), 1)
 
     def test_customer_cannot_submit_payment_for_another_customers_invoice(self):
         other_customer = Customer.objects.create(

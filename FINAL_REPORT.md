@@ -173,12 +173,16 @@ inventory, invoicing and payments, reports, authentication, and role-based
 dashboards. Automated tests exercise multiple form, workflow, access-control,
 financial, inventory, reporting, and audit behaviors.
 
-The browser script `qa_acceptance.mjs` describes signing in as administrator,
-mechanic, and customer QA accounts and checking that the expected dashboard is
-shown. This script is not evidence that it was run as part of the current
-verification, and it does not measure task completion time, user errors, or
-satisfaction. It also does not demonstrate the entire customer-to-workshop-to-
-payment journey.
+The Playwright suite in `tests/e2e/workshop.spec.mjs` defines browser tests for
+the administrator, mechanic, and customer dashboards, primary admin pages and
+mechanic access denials, plus an administrator workflow that creates a
+customer, adds a vehicle, and opens a repair order. The suite has not been
+executed as part of this verification; it requires dedicated QA accounts and an
+isolated QA database. The Django suite now also tests that console-style
+overpayment records are flagged and cannot be extended through the payment
+views. It does not cover the complete
+customer-to-workshop-to-payment journey or measure task completion time, user
+errors, or satisfaction.
 
 ## 5. Usability testing and demonstration
 

@@ -13,6 +13,12 @@
 {% endblock %}
 
 {% block content %}
+{% if invoice.overpayment_amount %}
+<div class="alert alert-error" role="alert">
+  Recorded payments exceed the invoice total by {{ invoice.overpayment_amount|zar }}.
+  Reconcile the recorded payments before accepting further payment.
+</div>
+{% endif %}
 <div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
 
   <!-- Left: Invoice info -->

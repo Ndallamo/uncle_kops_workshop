@@ -1090,7 +1090,7 @@ def dashboard(request):
                 notifications.insert(0, 'You have cost approvals waiting for review.')
 
         if request.session.pop('new_service_request', False):
-            notifications.insert(0, 'Your service request has been submitted. A mechanic will review it and update your vehicle status soon.')
+            notifications.insert(0, 'Your service request has been submitted. The workshop will contact you within 48 hours with an update.')
 
         return render(request, 'workshop/customer_dashboard.html', {
             'customer': customer,
@@ -1720,9 +1720,10 @@ def repair_order_edit(request, pk):
     order = get_object_or_404(RepairOrder, pk=pk)
     profile = getattr(request.user, 'userprofile', None)
     role = profile.role if profile else ('admin' if request.user.is_staff else '')
-    if role == 'customer' or (role == 'mechanic' and order.assigned_tech_id != request.user.pk):
-        messages.error(request, 'You may only update repair orders assigned to you.')
-        return redirect('dashboard')
+    if role not in {'admin', 'mechanic'}:
+        return _deny_access(request)
+    if role == 'mechanic' and order.assigned_tech_id != request.user.pk:
+        return _deny_access(request)
 
     previous_assigned_tech_id = order.assigned_tech_id
     form = RepairOrderForm(request.POST or None, instance=order)
@@ -2472,65 +2473,27 @@ def invoice_pay(request, pk):
         messages.error(request, 'Only an admin can record a verified payment.')
         return redirect('invoice_detail', pk=pk)
 
+    if invoice.overpayment_amount > 0:
+        messages.error(
+            request,
+            f'Invoice #{invoice.pk} has payments exceeding its total. Reconcile the recorded payments before accepting another payment.',
+        )
+        return redirect('invoice_detail', pk=invoice.pk)
+
     if invoice.payment_status == 'paid':
         messages.info(request, f'Invoice #{invoice.pk} has already been paid.')
         return redirect('invoice_detail', pk=invoice.pk)
 
     if is_customer:
-        valid_methods = dict(Invoice.METHOD_CHOICES)
-        payment_method = request.POST.get('payment_method', '').strip()
-        if request.method == 'POST' and payment_method in valid_methods:
-            with transaction.atomic():
-                invoice = Invoice.objects.select_for_update().get(pk=pk)
-                amount = invoice.balance_due
-                if invoice.payment_status != 'paid' and amount > 0:
-                    payment = InvoicePayment.objects.create(
-                        invoice=invoice,
-                        amount=amount,
-                        payment_method=payment_method,
-                        notes='Customer-submitted payment method.',
-                        recorded_by=request.user,
-                    )
-                    invoice.refresh_payment_status(payment_method=payment.payment_method)
-                    record_repair_event(
-                        invoice.repair_order,
-                        request.user,
-                        'payment',
-                        customer_visible=True,
-                        note=f'Payment of R {payment.amount:.2f} submitted by customer.',
-                        metadata={
-                            'amount': str(payment.amount),
-                            'payment_method': payment.payment_method,
-                            'invoice_id': invoice.pk,
-                            'payment_id': payment.pk,
-                            'balance_due': str(invoice.balance_due),
-                            'payment_status': invoice.payment_status,
-                        },
-                    )
-                    record_audit_entry(
-                        request.user,
-                        'invoice_payment_recorded',
-                        payment,
-                        repair_order=invoice.repair_order,
-                        details={
-                            'invoice_id': invoice.pk,
-                            'amount': str(payment.amount),
-                            'payment_method': payment.payment_method,
-                            'balance_due': str(invoice.balance_due),
-                            'payment_status': invoice.payment_status,
-                            'customer_submitted': True,
-                        },
-                    )
-                    messages.success(request, f'Payment submitted for invoice #{invoice.pk}.')
-                    return redirect('invoice_detail', pk=pk)
-                messages.info(request, f'Invoice #{invoice.pk} has already been paid.')
-                return redirect('invoice_detail', pk=pk)
-
+        if request.method == 'POST':
+            messages.error(
+                request,
+                'Online payment processing is not configured. No payment was recorded; please contact the workshop to arrange payment.',
+            )
+            return redirect('invoice_detail', pk=pk)
         return render(request, 'workshop/invoice_payment.html', {
             'invoice': invoice,
             'is_customer': True,
-            'payment_methods': Invoice.METHOD_CHOICES,
-            'payment_error': 'Please choose a valid payment method.' if request.method == 'POST' else '',
         })
 
     form = InvoicePaymentForm(request.POST or None, invoice=invoice)

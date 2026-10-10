@@ -212,9 +212,51 @@ $env:DJANGO_DEBUG = 'True'
 .\.venv\Scripts\python.exe manage.py test --keepdb
 ```
 
-`migrate --check` reports whether migrations are pending; it does not apply them. Run the browser acceptance script only against an isolated QA/staging database containing its dedicated QA accounts. Set `QA_ACCEPTANCE_PASSWORD` in the QA process environment; the script fails if it is missing. Never seed or run QA accounts against production.
+`migrate --check` reports whether migrations are pending; it does not apply them.
+The Django suite includes a regression test that inserts an overpayment directly
+in its isolated test database, simulates a stale invoice status, and verifies
+the application flags the mismatch and rejects further payment attempts.
+
+### End-to-end browser tests
+
+The Playwright suite checks that the admin, mechanic, and customer QA accounts
+reach their role-specific dashboards, that key admin pages load and mechanic
+access to admin-only creation pages is denied, then exercises creating a
+customer, adding a vehicle, and opening a repair order in the browser. It writes
+records, so use only a disposable, isolated QA database with the dedicated QA
+accounts; never point it at production. The test does not create or reset QA
+accounts.
+
+Install Node.js and the project test dependency, install Chromium, and start the
+Django application against the isolated QA database in a separate terminal:
+
+```powershell
+npm install
+npx playwright install chromium
+$env:QA_ACCEPTANCE_PASSWORD = 'your-qa-account-password'
+npm run test:e2e
+```
+
+By default, tests connect to `http://127.0.0.1:8000`. To use another isolated
+QA host, set `E2E_BASE_URL` and explicitly set `E2E_ALLOW_REMOTE=true`. QA
+usernames default to `qa_acceptance_admin`, `qa_acceptance_mechanic`, and
+`qa_acceptance_customer`; override them with `QA_ADMIN_USERNAME`,
+`QA_MECHANIC_USERNAME`, and `QA_CUSTOMER_USERNAME` if needed. Never supply
+production credentials or enable remote testing against production.
 
 ### MySQL and media backups
+
+Database migration `0023_database_wide_audit_triggers` installs MySQL insert,
+update, and delete triggers on every base table except `workshop_auditlog`,
+which is the append-only audit sink. Database-level events are written to that
+table with the source table, operation, primary key, MySQL account, and
+connection ID; row contents are not copied. Run
+`python manage.py verify_audit_triggers` after deployment to check coverage.
+The migration database account needs permission to create and drop triggers.
+When MySQL binary logging is enabled, a database administrator must also
+temporarily enable `log_bin_trust_function_creators` while running migrations
+that create triggers. Re-run `python manage.py migrate` afterward; trigger
+definitions remain installed when the setting is turned off again.
 
 Before a production migration or release, take a consistent MySQL dump and back up uploaded documents. Keep backups encrypted, off the application host, access-controlled, and subject to a documented retention period. `mysqldump` prompts for the database password instead of placing it in command history:
 

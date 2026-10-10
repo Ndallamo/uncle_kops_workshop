@@ -588,6 +588,10 @@ class Invoice(models.Model):
         return self.payments.aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
 
     @property
+    def overpayment_amount(self):
+        return max(self.paid_amount - self.total_due, Decimal('0.00'))
+
+    @property
     def balance_due(self):
         return max(self.total_due - self.paid_amount, Decimal('0.00'))
 

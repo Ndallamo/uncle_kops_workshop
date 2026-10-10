@@ -162,6 +162,7 @@
     .page-footer {
       display: flex;
       justify-content: center;
+      align-items: center;
       gap: 12px;
       flex-wrap: wrap;
       position: fixed;
@@ -169,7 +170,7 @@
       right: 0;
       bottom: 0;
       z-index: 40;
-      padding: 14px 20px;
+      padding: 10px 20px;
       background: var(--dark);
       border-top: 1px solid var(--border);
       font-size: 12px;
@@ -179,6 +180,24 @@
     .page-footer a {
       color: var(--orange2);
       text-decoration: none;
+    }
+    .footer-contact { position: relative; }
+    .footer-contact summary { color: var(--orange2); cursor: pointer; list-style: none; }
+    .footer-contact summary::-webkit-details-marker { display: none; }
+    .footer-contact summary::after { content: ' •'; color: var(--muted); }
+    .footer-contact-details {
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      display: grid;
+      gap: 8px;
+      min-width: max-content;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--dark);
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
     }
     .breadcrumbs {
       display: flex;
@@ -591,9 +610,11 @@
     input[type="date"] {
       color: var(--text);
     }
-    input[type="date"]::-webkit-calendar-picker-indicator {
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
       filter: invert(1) brightness(1.2);
       opacity: 0.9;
+      cursor: pointer;
     }
     input[type="date"]::-webkit-datetime-edit-fields-wrapper {
       color: var(--text);
@@ -1055,6 +1076,13 @@
     {% block content %}{% endblock %}
   </div>
   <footer class="page-footer">
+    <details class="footer-contact">
+      <summary>Contact Us</summary>
+      <div class="footer-contact-details">
+        <a href="mailto:unkle.kops123@gmail.com">unkle.kops123@gmail.com</a>
+        <a href="tel:+27511238110">051 123 8110</a>
+      </div>
+    </details>
     <a href="{% url 'privacy_policy' %}">Privacy Policy</a>
     <span>•</span>
     <a href="{% url 'terms_and_conditions' %}">Terms and Conditions</a>
@@ -1078,6 +1106,13 @@
     {% block login_content %}{% endblock %}
   </div>
   <div class="login-legal-links">
+    <details class="footer-contact">
+      <summary>Contact Us</summary>
+      <div class="footer-contact-details">
+        <a href="mailto:unkle.kops123@gmail.com" style="color:var(--orange2); text-decoration:none;">unkle.kops123@gmail.com</a>
+        <a href="tel:+27511238110" style="color:var(--orange2); text-decoration:none;">051 123 8110</a>
+      </div>
+    </details>
     <a href="{% url 'privacy_policy' %}" style="color:var(--orange2); text-decoration:none;">Privacy Policy</a>
     <span>•</span>
     <a href="{% url 'terms_and_conditions' %}" style="color:var(--orange2); text-decoration:none;">Terms and Conditions</a>

@@ -29,8 +29,12 @@
             {{ field }}
           {% else %}
             <div class="form-group {% if field.field.widget.attrs.rows or field.html_name == 'description' or field.html_name == 'notes' or field.html_name == 'address' or field.html_name == 'internal_notes' or field.html_name == 'service_desc' or field.html_name == 'requested_services' or field.html_name == 'vehicle_recent_service_history' or field.html_name == 'vehicle_notes' %}full{% endif %}">
-              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              <label for="{{ field.id_for_label }}">
+                {{ field.label }}{% if field.html_name == 'date_time' %}<span aria-hidden="true" style="color:var(--red);"> *</span>{% endif %}
+              </label>
+              {% if field.html_name == 'date_time' %}<div style="position:relative;">{% endif %}
               {{ field }}
+              {% if field.html_name == 'date_time' %}</div>{% endif %}
               {% if field.errors %}
                 {% for error in field.errors %}
                   <span style="color:var(--red); font-size:12px;">{{ error }}</span>
