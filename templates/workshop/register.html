@@ -21,9 +21,6 @@
         .field-live { font-size:12px; margin-top:4px; min-height:16px; }
         .field-live.ok { color:#2e9e5b; }
         .field-live.bad { color:#d64545; }
-        .pw-wrap { position:relative; }
-        .pw-wrap input { width:100%; padding-right:64px; box-sizing:border-box; }
-        .pw-toggle { position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:0; cursor:pointer; font-size:12px; color:var(--text); text-decoration:underline; }
       </style>
       {% if form.non_field_errors %}
         <div class="alert alert-error" style="margin-bottom:16px;">{{ form.non_field_errors }}</div>

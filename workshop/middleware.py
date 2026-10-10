@@ -12,7 +12,12 @@ class CustomerProfileCompletionMiddleware:
     def __call__(self, request):
         user = request.user
         profile = getattr(user, 'userprofile', None) if user.is_authenticated else None
-        allowed_paths = {reverse('customer_profile'), reverse('logout')}
+        allowed_paths = {
+            reverse('customer_profile'),
+            reverse('logout'),
+            reverse('privacy_policy'),
+            reverse('terms_and_conditions'),
+        }
         is_asset_request = request.path_info.startswith(('/static/', '/media/'))
 
         if profile and profile.role == 'customer' and not is_asset_request and request.path_info not in allowed_paths:

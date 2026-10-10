@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, reverse_lazy
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
@@ -11,6 +11,10 @@ handler500 = 'workshop.views.custom_500'
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('account/password/', auth_views.PasswordChangeView.as_view(
+        template_name='workshop/change_password.html',
+        success_url=reverse_lazy('customer_profile'),
+    ), name='password_change'),
     path('login/admin/', RedirectView.as_view(url='/admin/', permanent=False)),
     path('login/admin', RedirectView.as_view(url='/admin/', permanent=False)),
 

@@ -68,6 +68,10 @@ class VehicleForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['customer'].empty_label = 'Choose customer'
+        if self.instance.pk:
+            # Ownership and core vehicle identity are fixed after creation.
+            for field_name in ('customer', 'make', 'model', 'year'):
+                self.fields[field_name].disabled = True
         if user is not None:
             profile = getattr(user, 'userprofile', None)
             if profile and profile.role == 'customer':

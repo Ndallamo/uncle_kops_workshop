@@ -1,0 +1,33 @@
+<div style="width:100%; max-width:900px; margin:32px auto;">
+  {% if not user.is_authenticated %}
+  <div style="text-align:center; margin-bottom:24px;">
+    <div class="login-header">Uncle <span style="color:var(--orange);">Kop's</span><br>Workshop</div>
+    <div class="login-subheader">Terms and Conditions</div>
+  </div>
+  {% endif %}
+  <div class="card legal-page" style="padding:28px 28px 20px;">
+    <div style="margin-bottom:18px;">
+      <a href="{% if user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'login' %}{% endif %}" class="btn btn-secondary btn-sm">← {% if user.is_authenticated %}Back to dashboard{% else %}Back to login{% endif %}</a>
+    </div>
+    <p>These Terms and Conditions govern the use of Uncle Kop's Workshop services and all related online systems. By using this site or placing a service request, you agree to these terms.</p>
+    <h2>Service Scope</h2>
+    <p>We provide workshop, repair, invoicing, scheduling, and customer management services. The final scope and cost of work may vary depending on inspection and approved additional repairs.</p>
+    <h2>Customer Responsibilities</h2>
+    <ul>
+      <li>Provide accurate vehicle and contact details.</li>
+      <li>Review and approve repair estimates before work proceeds.</li>
+      <li>Pay agreed amounts for completed work and parts.</li>
+      <li>Collect vehicles promptly after completion or notification.</li>
+    </ul>
+    <h2>Repair and Payment Terms</h2>
+    <p>Repair work is carried out based on the information available at the time of inspection. Additional work may be required if hidden faults or safety concerns are identified. All quoted or approved work remains subject to final invoicing and payment terms.</p>
+    <h2>Liability</h2>
+    <p>We strive to perform work to a high standard, but we are not liable for consequential damage, loss, or delays outside our reasonable control, including but not limited to third-party service issues, parts shortages, or customer delays.</p>
+    <h2>Confidentiality and Data</h2>
+    <p>We will treat customer information responsibly and in line with our Privacy Policy. Information may be used internally to manage jobs, communications, and compliance requirements.</p>
+    <h2>Changes to Terms</h2>
+    <p>We reserve the right to update or amend these terms from time to time. Continued use of the service after changes are published constitutes acceptance of the updated terms.</p>
+    <h2>Contact</h2>
+    <p>For questions regarding these terms, please contact our workshop team using the contact details provided on the site.</p>
+  </div>
+</div>
