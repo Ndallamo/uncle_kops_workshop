@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.cache import patch_cache_control
 
 from .models import Customer
 
@@ -27,3 +28,22 @@ class CustomerProfileCompletionMiddleware:
                 return redirect('customer_profile')
 
         return self.get_response(request)
+
+
+class CsrfTokenCacheControlMiddleware:
+    """Prevent browsers and shared caches from reusing pages with stale CSRF tokens."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if request.META.get('CSRF_COOKIE_USED'):
+            patch_cache_control(
+                response,
+                private=True,
+                no_cache=True,
+                no_store=True,
+                must_revalidate=True,
+            )
+        return response
