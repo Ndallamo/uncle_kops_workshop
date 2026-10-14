@@ -259,9 +259,16 @@ EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '20'))
 SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '').strip()
+RESEND_FROM_EMAIL = os.environ.get('RESEND_FROM_EMAIL', '').strip()
+EMAIL_API_TIMEOUT = float(os.environ.get('EMAIL_API_TIMEOUT', '2.5'))
+if EMAIL_API_TIMEOUT <= 0 or EMAIL_API_TIMEOUT > 3:
+    raise ImproperlyConfigured('EMAIL_API_TIMEOUT must be greater than 0 and no more than 3 seconds.')
 
 if os.environ.get('EMAIL_BACKEND'):
     EMAIL_BACKEND = os.environ['EMAIL_BACKEND']
+elif RESEND_API_KEY:
+    EMAIL_BACKEND = 'workshop.email_backend.ResendEmailBackend'
 elif EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and not EMAIL_HOST_USER.startswith('your-'):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 else:
