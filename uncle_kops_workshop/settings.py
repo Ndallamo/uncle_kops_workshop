@@ -265,10 +265,12 @@ EMAIL_API_TIMEOUT = float(os.environ.get('EMAIL_API_TIMEOUT', '2.5'))
 if EMAIL_API_TIMEOUT <= 0 or EMAIL_API_TIMEOUT > 3:
     raise ImproperlyConfigured('EMAIL_API_TIMEOUT must be greater than 0 and no more than 3 seconds.')
 
-if os.environ.get('EMAIL_BACKEND'):
-    EMAIL_BACKEND = os.environ['EMAIL_BACKEND']
-elif RESEND_API_KEY:
+# Prefer the configured HTTPS provider whenever its key is present. Railway may
+# still have an older EMAIL_BACKEND=SMTP variable from the previous setup.
+if RESEND_API_KEY:
     EMAIL_BACKEND = 'workshop.email_backend.ResendEmailBackend'
+elif os.environ.get('EMAIL_BACKEND'):
+    EMAIL_BACKEND = os.environ['EMAIL_BACKEND']
 elif EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and not EMAIL_HOST_USER.startswith('your-'):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 else:
