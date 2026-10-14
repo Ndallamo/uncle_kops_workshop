@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "preDeployCommand": [
+      "python manage.py migrate --noinput",
+      "python manage.py collectstatic --noinput"
+    ],
+    "startCommand": "/bin/sh -c 'exec waitress-serve --listen=0.0.0.0:${PORT:-8000} uncle_kops_workshop.wsgi:application'",
+    "healthcheckPath": "/login/",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
