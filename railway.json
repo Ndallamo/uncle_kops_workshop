@@ -3,6 +3,7 @@
   "deploy": {
     "preDeployCommand": [
       "python manage.py migrate --noinput",
+      "python manage.py createsuperuser --noinput --username workshopadmin",
       "python manage.py collectstatic --noinput"
     ],
     "startCommand": "/bin/sh -c 'exec waitress-serve --trusted-proxy=* --trusted-proxy-headers=x-forwarded-proto --listen=0.0.0.0:${PORT:-8000} uncle_kops_workshop.wsgi:application'",
