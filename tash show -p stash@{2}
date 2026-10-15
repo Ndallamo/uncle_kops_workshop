@@ -1,0 +1,12 @@
+stash@{0}: On main: backup-pycache-after-merge
+stash@{1}: On main: backup-pycache-before-merge
+stash@{2}: On main: codex-pre-ndallamo-pull
+stash@{3}: On main: codex-pre-pull-6b5b199
+stash@{4}: On main: Backup local changes before pulling collaborator work
+stash@{5}: On main: Generated pycache edits during collaborator sync 2026-09-28
+stash@{6}: On main: WIP before Ndallamo 1d52d6e update 2026-09-28
+stash@{7}: On main: WIP before collaborator update 2026-09-28
+stash@{8}: On main: WIP before syncing with origin/main
+stash@{9}: On main: Temporary backup before merging collaborator changes
+stash@{10}: On main: Backup before fixing Git remote
+stash@{11}: On main: Backup before reconnecting GitHub
