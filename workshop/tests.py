@@ -1421,24 +1421,31 @@ class CustomerRepairOrderSummaryTests(TestCase):
         self.assertNotContains(response, 'supplier dispute')
         self.assertNotContains(response, 'staff-only details')
 
-    def test_customer_cannot_record_payment_without_online_processing(self):
+    def test_customer_can_record_payment_with_method(self):
         payment_url = reverse('invoice_pay', args=[self.invoice.pk])
         invoice_page = self.client.get(reverse('invoice_detail', args=[self.invoice.pk]))
         page = self.client.get(payment_url)
 
         self.assertContains(invoice_page, 'Pay invoice')
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'Online payment processing is not configured')
-        self.assertNotContains(page, 'Submit payment')
+        self.assertContains(page, 'Payment method')
+        self.assertContains(page, 'Submit payment')
 
-        response = self.client.post(payment_url, {'payment_method': 'card'})
+        response = self.client.post(payment_url, {
+            'amount': '115.00',
+            'payment_method': 'card',
+            'reference': 'customer-card-001',
+            'notes': '',
+        })
 
         self.assertRedirects(response, reverse('invoice_detail', args=[self.invoice.pk]))
         self.invoice.refresh_from_db()
-        self.assertEqual(self.invoice.payment_status, 'unpaid')
-        self.assertEqual(self.invoice.paid_amount, Decimal('0.00'))
-        self.assertEqual(self.invoice.balance_due, Decimal('115.00'))
-        self.assertFalse(InvoicePayment.objects.filter(invoice=self.invoice).exists())
+        self.assertEqual(self.invoice.payment_status, 'paid')
+        self.assertEqual(self.invoice.paid_amount, Decimal('115.00'))
+        self.assertEqual(self.invoice.balance_due, Decimal('0.00'))
+        payment = InvoicePayment.objects.get(invoice=self.invoice)
+        self.assertEqual(payment.payment_method, 'card')
+        self.assertEqual(payment.recorded_by, self.user)
 
     def test_user_without_role_cannot_edit_repair_order(self):
         unassigned_user = User.objects.create_user(

@@ -47,7 +47,7 @@
             <td><a href="{% url 'repair_order_detail' order.pk %}" class="text-orange fw-600">#{{ order.pk }}</a></td>
             <td>{{ order.vehicle.year }} {{ order.vehicle.make }} {{ order.vehicle.model }}</td>
             <td>{{ order.get_status_display }}</td>
-            <td>{{ order.date_updated|date:"d M Y" }}</td>
+            <td>{{ order.date_updated|date:"d M Y, H:i" }}</td>
           </tr>
           {% empty %}
           <tr><td colspan="4"><div class="empty-state"><strong>No repair orders yet</strong><span>Once a mechanic reviews your request, approved progress updates will appear here.</span><a href="{% url 'appointment_create' %}" class="btn btn-primary btn-sm">Request service</a></div></td></tr>

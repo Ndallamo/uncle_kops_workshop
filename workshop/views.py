@@ -1071,7 +1071,11 @@ def dashboard(request):
                 recipient=request.user,
                 is_read=False,
             )[:5]
-            repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(vehicle__customer=customer).exclude(status='cancelled').order_by('-date_created')
+            # Put the most recently changed repairs first so updates to older jobs
+            # are visible in the dashboard's limited tracking list.
+            repair_orders = RepairOrder.objects.select_related('vehicle__customer').filter(
+                vehicle__customer=customer,
+            ).exclude(status='cancelled').order_by('-date_updated', '-date_created')
             pending_approval = repair_orders.filter(approved=False, estimate_lines__isnull=False).distinct().order_by('-date_created')
 
             for order in repair_orders[:3]:
@@ -1748,7 +1752,7 @@ def repair_order_edit(request, pk):
         assignment_reason = (form.cleaned_data.get('assignment_reason') or '').strip()
         assigned_tech_id = getattr(form.cleaned_data.get('assigned_tech'), 'pk', None)
         assignment_changed = 'assigned_tech' in form.cleaned_data and previous_assigned_tech_id != assigned_tech_id
-        if role == 'admin' and assignment_changed and not assignment_reason:
+        if role == 'admin' and previous_assigned_tech_id and assignment_changed and not assignment_reason:
             form.add_error('assignment_reason', 'Please explain why the mechanic is being changed.')
             return render(request, 'workshop/repair_order_form.html', {'form': form, 'title': 'Edit Repair Order', 'order': order})
         changed_fields = form.changed_data
@@ -2484,18 +2488,6 @@ def invoice_pay(request, pk):
         messages.info(request, f'Invoice #{invoice.pk} has already been paid.')
         return redirect('invoice_detail', pk=invoice.pk)
 
-    if is_customer:
-        if request.method == 'POST':
-            messages.error(
-                request,
-                'Online payment processing is not configured. No payment was recorded; please contact the workshop to arrange payment.',
-            )
-            return redirect('invoice_detail', pk=pk)
-        return render(request, 'workshop/invoice_payment.html', {
-            'invoice': invoice,
-            'is_customer': True,
-        })
-
     form = InvoicePaymentForm(request.POST or None, invoice=invoice)
     if request.method == 'POST' and form.is_valid():
         with transaction.atomic():
@@ -3063,7 +3055,7 @@ def appointment_edit(request, pk):
                 form.add_error('assigned_mechanic', 'The customer must approve the repair estimate before a mechanic can be assigned.')
                 return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
         assignment_reason = (form.cleaned_data.get('assignment_reason') or '').strip()
-        if role == 'admin' and assignment_changed and not assignment_reason:
+        if role == 'admin' and previous_values['assigned_mechanic_id'] and assignment_changed and not assignment_reason:
             form.add_error('assignment_reason', 'Please explain why the mechanic is being changed.')
             return render(request, 'workshop/appointment_form.html', {'form': form, 'title': 'Edit Appointment', 'appt': appt})
         with transaction.atomic():

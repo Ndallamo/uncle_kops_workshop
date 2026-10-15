@@ -13,20 +13,19 @@
   </div>
 
   {% if is_customer %}
-    <p class="text-muted">Online payment processing is not configured. Contact the workshop to arrange payment. Your invoice will remain unpaid until the workshop records a verified receipt.</p>
-  {% else %}
-    <form method="post" style="display:flex; flex-direction:column; gap:16px;">
-      {% csrf_token %}
-      {% for field in form %}
-        <div class="form-group">
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% if field.errors %}{% for error in field.errors %}<span style="color:var(--red); font-size:12px;">{{ error }}</span>{% endfor %}{% endif %}
-        </div>
-      {% endfor %}
-      <button type="submit" class="btn btn-primary">Record verified receipt</button>
-    </form>
+    <p class="text-muted">Enter the amount you have paid and choose the payment method. Payments are recorded against this invoice.</p>
   {% endif %}
+  <form method="post" style="display:flex; flex-direction:column; gap:16px;">
+    {% csrf_token %}
+    {% for field in form %}
+      <div class="form-group">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}{% for error in field.errors %}<span style="color:var(--red); font-size:12px;">{{ error }}</span>{% endfor %}{% endif %}
+      </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">{% if is_customer %}Submit payment{% else %}Record verified receipt{% endif %}</button>
+  </form>
   <a href="{% url 'invoice_detail' invoice.pk %}" class="btn btn-secondary">Back to Invoice</a>
 </div>
 {% endblock %}
